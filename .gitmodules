@@ -1,0 +1,6 @@
+[submodule "dependencies/ffmpeg"]
+	path = dependencies/ffmpeg
+	url = https://www.ghproxy.cn/https://github.com/FFmpeg/FFmpeg
+[submodule "dependencies/freetype"]
+	path = dependencies/freetype
+	url = https://www.ghproxy.cn/https://github.com/freetype/freetype
