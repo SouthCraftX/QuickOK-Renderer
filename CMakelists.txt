@@ -10,6 +10,9 @@ set(QOR_FFMPEG_GIT_TAG n7.1)
 set(QOR_FREETYPE_GIT_REPO https://gitlab.freedesktop.org/freetype/freetype.git)
 set(QOR_FREETYPE_GIT_TAG VER-2.13.3)
 
+set(QOR_ANGLE_GIT_REPO git clone https://chromium.googlesource.com/angle/angle)
+set(QOR_ANGLE_GIT_TAG main)
+
 set(QOR_DEPENDIENICES_DOWNLOAD_PATH ${CMAKE_SOURCE_DIR}/build/downloaded_source)
 set(QOR_DEPENDIENICES_INSTALL_PATH ${CMAKE_SOURCE_DIR}/build/dependencies_root)
 
@@ -30,6 +33,25 @@ function(qor_string_match_ignoring_case x y res)
         set(${res} FALSE PARENT_SCOPE)
     endif()
 endfunction()
+
+# Way 1
+execute_process(COMMAND bash -c "echo $TERMUX_VERSION"
+                OUTPUT_VARIABLE TERMUX_VERSION
+                ERROR_QUIET
+                RESULT_VARIABLE TERMUX_RESULT
+)
+if(TERMUX_RESULT EQUAL 0 AND NOT TERMUX_VERSION STREQUAL "")
+    set(${QOR_IS_IN_TERMUX} TRUE)
+else()
+    set(${QOR_IS_IN_TERMUX} FALSE)
+endif()
+# Way 2
+if(EXISTS "/data/data/com.termux/files/usr/")
+    set(${QOR_IS_IN_TERMUX} TRUE)
+else()
+    set(${QOR_IS_IN_TERMUX} FALSE)
+endif()
+
 
 # cmake_language(COMPILER_ID_RUN C)
 
@@ -251,13 +273,113 @@ add_executable(QORender source/main.c)
 
 include_directories(dependencies/qozero/include)
 
-# OpenGL/EGL is often contained in the system
+# --------- EGL ---------
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if(NOT Python3_FOUND)
+    message(FATAL_ERROR "Python3 not found, required to build ANGLE")
+endif()
 
-# include(${CMAKE_SOURCE_DIR}/cmake/FindEGL.cmake)
+find_program(NINJA_EXECUTABLE ninja)
+if(NOT NINJA_EXECUTABLE)
+    message(FATAL_ERROR "Ninja not found, required to build ANGLE")
+endif()
 
-find_package(OpenGL REQUIRED)
-# find_package(EGL REQUIRED)
-target_link_libraries(QORender PRIVATE OpenGL::GL EGL)
+# TODO
+set(QOR_ANGLE_GN_ARGS 
+    is_debug=false
+    angle_enable_swiftshader=true
+    angle_enable_vulkan=true
+)
+
+if(${CMAKE_COMPILER_ID} MATCHES "Clang")
+    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=true")
+else()
+    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=false")
+endif()
+
+if(NOT DEFINED QOR_ANGLE_BACKENDS)
+    message(NOTICE "QOR_ANGLE_BACKENDS not set, defaulting to all available 
+                    backends on current platform")
+    foreach(BACKEND , ${QOR_ANGLE_BACKENDS})
+        if(BACKEND MATCHES "d3d11")
+            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_d3d11=true)
+        elseif(BACKEND MATCHES "metal")
+            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_metal=true)
+        elseif(BACKEND MATCHES "vulkan")
+            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_vulkan=true)
+        elseif(BACKEND MATCHES "swiftshader")
+            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_swiftshader=true)
+        elseif(BACKEND MATCHES "opengl")
+            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_opengl=true)
+        else()
+            message(FATAL_ERROR "Unknown backend ${BACKEND}")
+        endif()
+    endforeach()
+else()
+    if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
+        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} 
+            angle_enable_d3d9=true
+            angle_enable_d3d11=true
+        )
+    endif()
+    if(${CMAKE_SYSTEM_NAME} STREQUAL "mac|ios")
+        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} 
+            angle_enable_metal=true
+        )
+    endif()
+    if(${CMAKE_SYSTEM_NAME} STREQUAL "android")
+        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=android)
+    endif()
+    set(${QOR_ANGLE_GN_ARGS} ${QOR_ANGLE_GN_ARGS} 
+        angle_enable_swiftshader=true
+        angle_enable_opengl=true
+        angle_enable_vulkan=true
+    )
+endif()
+
+if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=windows)
+elseif(${CMAKE_SYSTEM_NAME} STREQUAL "linux")
+    if(${QOR_IS_IN_TERMUX})
+        message(WARNING "Building ANGLE for Termux may not work as expected")
+    endif()
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=linux)
+elseif(${CMAKE_SYSTEM_NAME} STREQUAL "android")
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=android)
+elseif(${CMAKE_SYSTEM_NAME} STREQUAL "mac|ios")
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=${CMAKE_SYSTEM_NAME})
+endif()
+
+ExternalProject_Add(
+    QOR_ANGLE
+    PREFIX ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle
+    GIT_REPOSITORY ${QOR_ANGLE_GIT_REPO}
+    GIT_TAG ${QOR_ANGLE_GIT_TAG}
+    CONFIGURE_COMMAND ${Python3_EXECUTABLE} 
+        ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/build/gn
+        gen ${QOR_DEPENDIENICES_INSTALL_PATH}/angle
+        --args="${QOR_ANGLE_GN_ARGS}"
+    BUILD_COMMAND ${NINJA_EXECUTABLE} -C ${QOR_DEPENDIENICES_INSTALL_PATH}/angle
+    INSTALL_COMMAND "" # explicit installing is not needed
+    BUILD_BYPRODUCTS 
+)
+
+add_library(QOR_libEGL SHARED IMPORTED)
+add_library(QOR_libGLESv2 SHARED IMPORTED)
+
+set_target_properties(QOR_libEGL PROPERTIES 
+    IMPORTED_LOCATION ${QOR_DEPENDIENICES_INSTALL_PATH}/angle/lib/libEGL${CMAKE_SHARED_LIBRARY_SUFFIX}
+    INTERFACE_INCLUDE_DIRECTORIES ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/include
+)
+
+set_target_properties(QOR_libGLESv2 PROPERTIES
+    IMPORTED_LOCATION ${QOR_DEPENDIENICES_INSTALL_PATH}/angle/lib/libGLESv2${CMAKE_SHARED_LIBRARY_SUFFIX}
+    INTERFACE_INCLUDE_DIRECTORIES ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/include
+)
+
+add_dependencies(QOR_libEGL QOR_ANGLE)
+add_dependencies(QOR_libGLESv2 QOR_ANGLE)
+target_link_libraries(QORender PRIVATE QOR_libEGL QOR_libGLESv2)
 
 # -------- Freetype --------
 set(
@@ -280,10 +402,10 @@ qor_string_match_ignoring_case(${CMAKE_C_FLAGS} "neon" QOR_FREETYPE_USE_NEON)
 if(QOR_FREETYPE_USE_AVX2) 
     set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_AVX2=ON")
 endif()
-if(QOR_FREETYPE_USE_SSE2) # sse2
+if(QOR_FREETYPE_USE_SSE2) 
     set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_SSE2=ON")
 endif()
-if(QOR_FREETYPE_USE_NEON) # neon
+if(QOR_FREETYPE_USE_NEON) 
     set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_NEON=ON")
 endif()
 
