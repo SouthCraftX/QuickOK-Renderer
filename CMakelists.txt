@@ -285,11 +285,7 @@ if(NOT NINJA_EXECUTABLE)
 endif()
 
 # TODO
-set(QOR_ANGLE_GN_ARGS 
-    is_debug=false
-    angle_enable_swiftshader=true
-    angle_enable_vulkan=true
-)
+set(QOR_ANGLE_GN_ARGS is_debug=false)
 
 if(${CMAKE_COMPILER_ID} MATCHES "Clang")
     set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=true")
