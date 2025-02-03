@@ -10,7 +10,7 @@ set(QOR_FFMPEG_GIT_TAG n7.1)
 set(QOR_FREETYPE_GIT_REPO https://gitlab.freedesktop.org/freetype/freetype.git)
 set(QOR_FREETYPE_GIT_TAG VER-2.13.3)
 
-set(QOR_ANGLE_GIT_REPO git clone https://chromium.googlesource.com/angle/angle)
+set(QOR_ANGLE_GIT_REPO https://chromium.googlesource.com/angle/angle)
 set(QOR_ANGLE_GIT_TAG main)
 
 set(QOR_DEPENDIENICES_DOWNLOAD_PATH ${CMAKE_SOURCE_DIR}/build/downloaded_source)
@@ -266,12 +266,22 @@ elseif(QOR_TARGET_ARCH MATCHES "arm")
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set(${CMAKE_INTERPROCEDURAL_OPTIMIZATION} TRUE)
 endif()
 
 add_executable(QORender source/main.c)
 
-include_directories(dependencies/qozero/include)
+# --------- QOZero ---------
+if(NOT DEFINED QOZERO_SOURCE_ROOT)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/../QOZero)
+        set(QOZERO_SOURCE_ROOT ${CMAKE_SOURCE_DIR}/../QOZero)
+        message(STATUS "QOZERO_SOURCE_ROOT not set but QOZero found in the parent directory")
+    else()
+        message(FATAL_ERROR "QOZERO_SOURCE_ROOT not set and QOZero not found in the parent directory")
+    endif()
+endif()
+target_include_directories(QORender PRIVATE ${QOZERO_SOURCE_ROOT}/include)
+# --------------------------
 
 # --------- EGL ---------
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -293,9 +303,7 @@ else()
     set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=false")
 endif()
 
-if(NOT DEFINED QOR_ANGLE_BACKENDS)
-    message(NOTICE "QOR_ANGLE_BACKENDS not set, defaulting to all available 
-                    backends on current platform")
+if(DEFINED QOR_ANGLE_BACKENDS)
     foreach(BACKEND , ${QOR_ANGLE_BACKENDS})
         if(BACKEND MATCHES "d3d11")
             set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_d3d11=true)
@@ -312,6 +320,8 @@ if(NOT DEFINED QOR_ANGLE_BACKENDS)
         endif()
     endforeach()
 else()
+    message(NOTICE "QOR_ANGLE_BACKENDS not set, defaulting to all available 
+                    backends on current platform")
     if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
         set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} 
             angle_enable_d3d9=true
@@ -494,7 +504,7 @@ endif()
 if(NOT DEFINED QOR_NO_HARDWARE_H264)
     set(QOR_HARDWARE_H264_ENCODER_ARG " \
         --enable-encoder=h264_qsv --enable-encoder=h264_amf \
-        --enable-encoder=h264_nvenc"
+        --enable-encoder=h264_nvenc --enable-encoder=h254_vulkan "
     )
 else()
     set(QOR_HARDWARE_H264_ENCODER_ARG "") 
