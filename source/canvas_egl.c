@@ -1,3 +1,3 @@
-#include "../include/canvas.h"
+#include "../include/renderer.h"
 
 struct 

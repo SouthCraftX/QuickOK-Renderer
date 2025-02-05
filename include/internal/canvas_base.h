@@ -1,5 +1,5 @@
 // for debug
-#include "../canvas.h"
+#include "../renderer.h"
 
 #define __QO_CANVAS_EXTRA_CONTEXT_PTRS  4
 

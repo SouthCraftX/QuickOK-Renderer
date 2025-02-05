@@ -6,11 +6,11 @@
 #include "../../QOZero/include/qozero.h"
 #if defined(__cplusplus)
 
-struct _QOR_FontEngine;
-typedef _QOR_FontEngine QO_FontEngine;
+struct _QO_FontEngine;
+typedef _QO_FontEngine QO_FontEngine;
 
-struct _QOR_FontGlyph;
-typedef _QOR_FontGlyph QO_FontGlyph;
+struct _QO_FontGlyph;
+typedef _QO_FontGlyph QO_FontGlyph;
 
 typedef enum 
 {

@@ -7,5 +7,6 @@
         "MSVC",
         "muxer",
         "STREQUAL"
-    ]
+    ],
+    "Codegeex.RepoIndex": true
 }
