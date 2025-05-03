@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.11)
 include(ExternalProject)
 include(CMakeParseArguments)
+include(FetchContent)
 
 project(QORender LANGUAGES C VERSION 0.0.1)
 
@@ -16,7 +17,24 @@ set(QOR_ANGLE_GIT_TAG main)
 set(QOR_DEPENDIENICES_DOWNLOAD_PATH ${CMAKE_SOURCE_DIR}/build/downloaded_source)
 set(QOR_DEPENDIENICES_INSTALL_PATH ${CMAKE_SOURCE_DIR}/build/dependencies_root)
 
+set(QOR_ICU_GIT_REPO https://github.com/unicode-org/icu.git)
+set(QOR_ICU_GIT_TAG release-77-1)
+
+if(NOT DEFINED WINDOWS_SDK32_PATH)
+    set(WINDOWS_SDK_PATH "C:/Program Files (x86)/Windows Kits/10")
+endif()
+if(NOT DEFINED WINDOWS_SDK64_PATH)
+    set(WINDOWS_SDK_PATH "C:/Program Files/Windows Kits/10")
+endif()
 # include("CMakeDetermine0.0.1Compiler.cmake")
+
+option(USE_SYSTEM_ICU "Try to use system-provided ICU on Windows (fail if not found)" OFF)
+option(BUILD_FFMPEG_REFER_TO_HOST "Build ffmpeg with arguments that refer to host system, like architecture, encoders." OFF)
+option(BUILD_ANGLE_REFER_TO_HOST "Build angle with arguments that refer to host system, like backends" OFF)
+
+set(FETCHCONTENT_BASE_DIR ${QOR_DEPENDIENICES_DOWNLOAD_PATH} CACHE PATH 
+    "Path to store downloaded dependencies")
+message(DEBUG "FETCHCONTENT_BASE_DIR: ${FETCHCONTENT_BASE_DIR}")
 
 set(CMAKE_CXX_COMPILER OFF)
 
@@ -323,8 +341,25 @@ if(NOT NINJA_EXECUTABLE)
     message(FATAL_ERROR "Ninja not found, required to build ANGLE")
 endif()
 
-# TODO
-set(QOR_ANGLE_GN_ARGS is_debug=false)
+# Shrink ANGLE
+set(QOR_ANGLE_GN_ARGS 
+    "is_debug=false"
+    "angle_enable_debug_layers=false" 
+    "symbol_level=0"
+    "angle_enable_trace=false"
+    "angle_enable_vulkan_validation_layers=true" # for security
+    "is_offline_build=true"
+    "angle_enable_precompiled_headers=true"
+    "is_component_build=false"
+    "angle_enable_capture_replay=false"
+    "angle_enable_dynamic_trace_buffer=false"
+    "angle_enable_hlsl=false"
+    "angle_enable_gles1=false"
+    "angle_build_tests=false"
+)
+
+if(${CMAKE_INTERPROCEDURAL_OPTIMIZATION})
+    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} angle_enable_lto=true")
 
 if(${CMAKE_COMPILER_ID} MATCHES "Clang")
     set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=true")
@@ -332,44 +367,8 @@ else()
     set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=false")
 endif()
 
-if(DEFINED QOR_ANGLE_BACKENDS)
-    foreach(BACKEND , ${QOR_ANGLE_BACKENDS})
-        if(BACKEND MATCHES "d3d11")
-            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_d3d11=true)
-        elseif(BACKEND MATCHES "metal")
-            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_metal=true)
-        elseif(BACKEND MATCHES "vulkan")
-            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_vulkan=true)
-        elseif(BACKEND MATCHES "swiftshader")
-            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_swiftshader=true)
-        elseif(BACKEND MATCHES "opengl")
-            set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_opengl=true)
-        else()
-            message(FATAL_ERROR "Unknown backend ${BACKEND}")
-        endif()
-    endforeach()
-else()
-    message(NOTICE "QOR_ANGLE_BACKENDS not set, defaulting to all available 
-                    backends on current platform")
-    if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
-        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} 
-            angle_enable_d3d9=true
-            angle_enable_d3d11=true
-        )
-    endif()
-    if(${CMAKE_SYSTEM_NAME} STREQUAL "mac|ios")
-        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} 
-            angle_enable_metal=true
-        )
-    endif()
-    if(${CMAKE_SYSTEM_NAME} STREQUAL "android")
-        set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=android)
-    endif()
-    set(${QOR_ANGLE_GN_ARGS} ${QOR_ANGLE_GN_ARGS} 
-        angle_enable_swiftshader=true
-        angle_enable_opengl=true
-        angle_enable_vulkan=true
-    )
+if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_d3d11=true)
 endif()
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
@@ -385,6 +384,10 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "mac|ios")
     set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=${CMAKE_SYSTEM_NAME})
 endif()
 
+if(DEFINED QOR_ENABLE_SWIFTSHADER_FALLBACK)
+    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_swiftshader=true)
+endif()
+
 ExternalProject_Add(
     QOR_ANGLE
     PREFIX ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle
@@ -397,6 +400,9 @@ ExternalProject_Add(
     BUILD_COMMAND ${NINJA_EXECUTABLE} -C ${QOR_DEPENDIENICES_INSTALL_PATH}/angle
     INSTALL_COMMAND "" # explicit installing is not needed
     BUILD_BYPRODUCTS 
+    BUILD_ALWAYS OFF
+    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/angle
+    LOG_DIR ${CMAKE_BINARY_DIR}/log/angle
 )
 
 add_library(QOR_libEGL SHARED IMPORTED)
@@ -453,6 +459,9 @@ ExternalProject_Add(
                 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}"
                 ${QOR_FREETYPE_BUILD_OPTIONS}"
     INSTALL_DIR ${QOR_DEPENDIENICES_INSTALL_PATH}/freetype
+    BUILD_ALWAYS OFF
+    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/freetype
+    LOG_DIR ${CMAKE_BINARY_DIR}/log/freetype
 )
 
 
@@ -576,8 +585,21 @@ ExternalProject_Add(
     BUILD_COMMAND make -j${CMAKE_PARALLEL_LEVEL}
     INSTALL_COMMAND make install
     OUTPUT_VARIABLE FFMPEG_CONFIGURE_OUTPUT
+    BUILD_ALWAYS OFF
+    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/ffmpeg
+    LOG_DIR ${CMAKE_BINARY_DIR}/log/ffmpeg
 )
 message(STATUS "${FFMPEG_CONFIGURE_OUTPUT}")
+
+function(find_win_icu)
+endfunction()
+
+if(USE_SYSTEM_ICU)
+    if(NOT WIN32)
+        message(FATAL_ERROR "USE_SYSTEM_ICU is not supported on non-Windows platforms")
+    endif()
+    
+endif()
 
 add_dependencies(QORender QOR_FFMpeg)
 target_include_directories(QORender PRIVATE ${QOR_DEPENDIENICES_INSTALL_PATH}/ffmpeg/include)

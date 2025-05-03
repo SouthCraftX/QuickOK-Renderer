@@ -1,8 +1,8 @@
 #pragma once
-#include <libavutil/pixfmt.h>
+
 #define __QOR_VIDEO_OUT_STREAMER_H__
 
-#include "renderer.h"
+#include "../include/renderer.h"
 #include <libavformat/avformat.h>
 
 #if defined(__cplusplus)

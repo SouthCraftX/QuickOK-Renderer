@@ -26,13 +26,15 @@ _QO_EGLVersion __egl_version;
 
 // Maybe we can share it between processes via DMA-BUF in linux or D3DShareHandle in windows
 // But I'm not intended to do that in version 1.x
-struct _QO_EGLRenderingEnv
+struct __QO_RenderingEnvEGLContext
 {
     qo_ref_count_t  ref_count;
     EGLDisplay      egl_display;
     EGLContext      egl_context;
     EGLConfig       egl_config;
+    EGLSurface      dummy_surface; //< used to initialize EGL context
 };
+typedef struct __QO_RenderingEnvEGLContext _QO_RenderingEnvEGLContext;
 
 qo_stat_t
 __qo_hw_rendering_env_init(
@@ -56,10 +58,10 @@ __qo_hw_rendering_env_init(
     };
     switch (p_device->__backend)
     {
-        case QO_RENDERING_EGL_VULKAN:
+        case QO_RENDERING_ANGLE_VULKAN:
             display_attributes[1] = EGL_PLATFORM_ANGLE_TYPE_ANGLE;
             break;
-        case QO_RENDERING_EGL_D3D11:
+        case QO_RENDERING_ANGLE_D3D11:
             display_attributes[1] = EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
             break;
         default:
@@ -86,7 +88,7 @@ __qo_hw_rendering_env_init(
         EGL_RED_SIZE ,          8 ,
         EGL_GREEN_SIZE ,        8 ,
         EGL_BLUE_SIZE ,         8 ,
-        EGL_ALPHA_SIZE ,        (colorspace == QO_COLORSPACE_RGBA ? 8 : 0) ,
+        EGL_ALPHA_SIZE ,        (colorspace == QO_COLORSPACE_RGBA32 ? 8 : 0) ,
         EGL_RENDERABLE_TYPE , EGL_OPENGL_ES3_BIT_KHR ,
         EGL_NONE
     };
@@ -100,8 +102,40 @@ __qo_hw_rendering_env_init(
         return QO_NOT_SUPPORTED;
     } 
 
-    p_env->egl_display = egl_display;
-    p_env->egl_config  = egl_config;
+    const EGLint pbuffer_attributes[] = {
+        EGL_WIDTH , 1 ,
+        EGL_HEIGHT , 1 ,
+        EGL_NONE
+    };
+
+    EGLSurface egl_surface = eglCreatePbufferSurface(egl_display , egl_config , pbuffer_attributes);
+    if (egl_surface == EGL_NO_SURFACE)
+    {
+        eglTerminate(egl_display);
+        QO_ERRPRINTF("Failed to create egl surface\n");
+        return QO_NOT_SUPPORTED;
+    }
+
+    EGLint context_attributes[] = {
+        EGL_CLIENT_APIS , EGL_OPENGL_ES3_BIT_KHR ,
+        EGL_NONE
+    };
+
+    EGLContext egl_context = eglCreateContext(egl_display , egl_config , EGL_NO_CONTEXT , context_attributes);
+    if (egl_context == EGL_NO_CONTEXT)
+    {
+        eglDestroySurface(egl_display , egl_surface);
+        eglTerminate(egl_display);
+        QO_ERRPRINTF("Failed to create egl context\n");
+        return QO_NOT_SUPPORTED;
+    }
+
+    // We don't make it current now. We will do it when we need it.
+
+    _QO_RenderingEnvEGLContext * extra_context = malloc(sizeof(_QO_RenderingEnvEGLContext));
+    extra_context->egl_display = egl_display;
+    extra_context->egl_config = egl_config;
+    p_env->extra_context = extra_context;
     return QO_OK;
 }
 
@@ -109,11 +143,12 @@ void
 __qo_hw_rendering_env_unref(
     QO_RenderingEnv *    p_env
 ){
-    if (--p_env->ref_count)
+    _QO_RenderingEnvEGLContext * p_egl_context = (_QO_RenderingEnvEGLContext *)p_env->extra_context;
+    if (--p_env->reference_count)
         return;
-    eglDestroyContext(p_env->egl_display , p_env->egl_context);
-    eglTerminate(p_env->egl_display);
-    p_env->egl_display = EGL_NO_DISPLAY;
+    eglDestroyContext(p_egl_context->egl_display , p_egl_context->egl_context);
+    eglTerminate(p_egl_context->egl_display);
+    p_egl_context->egl_display = EGL_NO_DISPLAY;
     free(p_env);
 }
 
@@ -138,23 +173,9 @@ __qo_egl_canvas_init(
     qo_uint32_t         height ,
     QO_Color            default_background_color
 ) {
-
-    const EGLint pbuffer_attributes[] = {
-        EGL_WIDTH , width ,
-        EGL_HEIGHT , height ,
-        EGL_NONE
-    };
-
-    EGLSurface egl_surface = eglCreatePbufferSurface(p_env->egl_display , p_env->egl_config , pbuffer_attributes);
-    if (egl_surface == EGL_NO_SURFACE)
-    {
-        QO_ERRPRINTF("Failed to create egl surface\n");
-        return QO_NOT_SUPPORTED;
-    }
-
-    _QO_CanvasEGLContext * canvas_egl_context = __qo_canvas_get_egl_context(canvas);
-    canvas_egl_context->egl_surface = egl_surface;
-    return QO_OK;
+    // We use FBO
+    GLuint color_texture;
+    
 }
 
 void

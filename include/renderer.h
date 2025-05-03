@@ -3,6 +3,8 @@
 
 #include "font_engine.h"
 
+#include <vulkan/vulkan.h>
+
 #if defined(__cplusplus)
 extern "C" {
 #endif // __cplusplus
@@ -18,9 +20,9 @@ typedef struct _QO_RenderingDevice QO_RenderingDevice;
 
 typedef enum 
 {
-    QO_RENDERING_SOFTWARE = 0 ,
-    QO_RENDERING_EGL_D3D11 ,
-    QO_RENDERING_EGL_VULKAN
+    QO_RENDERING_ANGLE_SWIFTSHADER ,
+    QO_RENDERING_ANGLE_D3D11 ,
+    QO_RENDERING_ANGLE_VULKAN
 } QO_RenderingBackends;
 
 typedef enum 
@@ -143,12 +145,16 @@ qo_stat_t
 qo_rendering_env_get(
     QO_Colorspace           colorspace ,
     QO_RenderingDevice *    p_device ,
-    QO_RenderingEnv **      pp_env ,
-    qo_bool_t               shared_between_threads //< If not, the rendering env can only be operated by the thread that created it
+    QO_RenderingEnv **      pp_env 
 );
 
 QO_RenderingBackends
 qo_rendering_env_get_type(
+    QO_RenderingEnv *   p_env
+);
+
+qo_stat_t
+qo_rendering_env_unref(
     QO_RenderingEnv *   p_env
 );
 
@@ -175,6 +181,12 @@ void
 qo_canvas_destroy(
     QO_Canvas *        p_canvas
 );
+
+qo_stat_t
+qo_canvas_bind_font_engine(
+    QO_Canvas *        p_canvas ,
+    QO_FontEngine *    p_font_engine
+) QO_NONNULL(1 , 2);
 
 qo_stat_t
 qo_canvas_render_glyph(
@@ -207,14 +219,9 @@ qo_canvas_render_textline(
     QO_Canvas *        p_canvas ,
     qo_ccstring_t       line ,
     qo_uint32_t         x ,
-    qo_uint32_t         y ,
-    QO_FontEngine *    p_font_engine
-) QO_NONNULL(1 , 2 , 5);
+    qo_uint32_t         y 
+) QO_NONNULL(1 , 2);
 
-qo_stat_t
-qo_rendering_env_unref(
-    QO_RenderingEnv *   p_env
-);
 
 #if defined(__cplusplus)
 }

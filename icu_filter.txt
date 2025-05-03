@@ -1,0 +1,27 @@
+# This file only useful when building a builtin ICU library.
+
+# --- Core Data & Resources ---
+# Needed for basic operations, resource loading, error names etc.
+*.res
+icudt??l.dat     # Linker directive, often needed
+coll/ucadata.icu # Collation data (often implicitly needed)
+locales/*.res    # Root/fallback locales might be necessary
+ucase.icu      # Case mapping properties
+uprops.icu     # Unicode properties
+unames.icu     # For u_errorName
+
+
+# --- Converters ---
+# Needed for u_strFromUTF8, u_strToUTF8
+*.cnv
+
+# --- Normalization ---
+# Needed for unorm2_getNFCInstance, unorm2_normalize
+nfc.nrm
+norm2/*.nrm    # Include necessary normalization data files
+
+# --- Break Iteration ---
+# Needed for ubrk_open(UBRK_CHARACTER, ...)
+brkitr/*.brk   # Break rules
+# Depending on the rules, dictionary files might be needed
+# brkitr/dictionaries/*.dict

@@ -3,8 +3,10 @@
 
 #define QO_ENABLE_EXPERIMENTAL_CXX
 
-#include "../../QOZero/include/qozero.h"
+#include "../../QuickOK-Zero/include/qozero.h"
 #if defined(__cplusplus)
+extern "C" {
+#endif // defined(__cplusplus)
 
 struct _QO_FontEngine;
 typedef _QO_FontEngine QO_FontEngine;
@@ -122,4 +124,6 @@ qo_font_glyph_unref(
     QO_FontGlyph *        font_glyph
 );
 
+#if defined (__cplusplus)
+}
 #endif // __cplusplus

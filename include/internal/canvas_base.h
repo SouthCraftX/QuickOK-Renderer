@@ -43,6 +43,7 @@ struct _QO_Canvas
     qo_uint32_t         height;
     QO_Colorspace       colorspace;
     QO_Color            default_background_color;
+    QO_FontEngine *     p_font_engine;
     _QO_CanvasMethods * methods;
     QO_RenderingEnv *   p_bound_env;
     qo_pointer_t        extra_context[__QO_CANVAS_EXTRA_CONTEXT_PTRS];

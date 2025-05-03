@@ -18,7 +18,7 @@ struct _QO_RenderingEnv
     QO_RenderingBackends    backend;
     QO_Colorspace           colorspace;
     QO_Thread *             owner_thread;  //< NULL if shared between threads
-    QO_VLA                  extra_context;
+    qo_pointer_t            extra_context;
 };
 
 QO_RenderingBackends
