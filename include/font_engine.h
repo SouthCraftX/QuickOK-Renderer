@@ -30,7 +30,7 @@ typedef enum
 qo_stat_t
 qo_font_engine_new(
     QO_FontEngine **       pp_font_engine ,
-    qo_ccstring_t           ttf_path ,
+    qo_ccstring_t           font_path ,
     QO_FontEngineBackend   backend
 ) QO_NONNULL(1 , 2);
 
@@ -55,39 +55,7 @@ qo_font_engine_set_char_size(
     QO_FontSizeUnit        unit
 ) QO_NONNULL(1);
 
-/// @brief Set cached glyph count for the font engine
-/// @param font_engine Font engine to set cache for
-/// @param cached_glyph_count Number of glyphs to cache. 0 disables caching them
-///        If the font engine don't support generating glyphs, this parameter is
-///        ignored.
-/// @param cached_bitmap_count Number of bitmaps to cache. 0 disables caching them
-/// @return The status of the operation
-/// @retval QO_OK The operation was successful
-/// @retval QO_OUT_OF_MEMORY No enough memory to reserve specified number of glyphs
-qo_stat_t
-qo_font_engine_set_cache(
-    QO_FontEngine *        font_engine ,
-    qo_uint32_t             cached_glyph_count ,
-    qo_uint32_t             cached_bitmap_count
-) QO_NONNULL(1);
 
-qo_stat_t
-qo_font_engine_cache_glyphs(
-    QO_FontEngine *        font_engine ,
-    qo_ccstring_t           utf8_string
-) QO_NONNULL(1);
-
-/// @brief Clean the cache of the font engine
-/// @param font_engine Font engine to clean cache for
-/// @param clean_glyphs Whether to clean cached glyphs
-/// @param clean_bitmaps Whether to clean cached bitmaps
-/// @return The status of the operation
-qo_stat_t
-qo_font_engine_clean_cache(
-    QO_FontEngine *        font_engine ,
-    qo_bool_t               clean_glyphs ,
-    qo_bool_t               clean_bitmaps
-) QO_NONNULL(1);
 
 /*
 qo_stat_t
@@ -101,10 +69,16 @@ qo_font_engine_set_transformation(
 */
 
 qo_stat_t
-qo_font_engine_render_bitmap(
-    QO_FontEngine *        font_engine 
+qo_font_engine_render_utf8char_bitmap(
+    QO_FontEngine *        font_engine ,
+    qo_ccstring_t          utf8_char   
+) QO_NONNULL(1, 2);
 
-); 
+qo_stat_t
+qo_font_engine_render_utf16char_bitmap(
+    QO_FontEngine *        font_engine,
+    char16_t *             utf16_char // TODO: replcae with qo_cwcstring_t
+) QO_NONNULL(1, 2);
 
 qo_stat_t
 qo_font_glyph_to_bitmap(

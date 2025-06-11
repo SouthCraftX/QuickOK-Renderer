@@ -8,5 +8,39 @@
         "muxer",
         "STREQUAL"
     ],
-    "Codegeex.RepoIndex": true
+    "Codegeex.RepoIndex": false,
+    "clangd.arguments": [
+        "--background-index",
+        "--compile-commands-dir=.",  //compile_command.json相对路径，cmake默认生成在build，自行配置
+        "-j=4",
+        "--all-scopes-completion",
+        "--completion-style=detailed",
+        "--header-insertion=iwyu",
+        "--pch-storage=memory",
+        "--cross-file-rename",
+        "--enable-config",
+        "--fallback-style=WebKit",
+        "--pretty",
+        "--clang-tidy",
+        
+        // 网上别人配置clang++，但我这边windows、linux实测不加这行也没啥问题，可能mac可能需要另外加
+    	"--query-driver=clang"
+    ],
+    "[c]": {
+        "editor.defaultFormatter": "zachflower.uncrustify",
+        "editor.formatOnSave": true
+    },
+    "[cpp]": {
+        "editor.defaultFormatter": "zachflower.uncrustify",
+        "editor.formatOnSave": true
+    },
+    // "[glsl]": {
+    //     "editor.defaultFormatter": "xaver.clang-format",
+    //     "editor.formatOnSave": true
+    // },
+    "[glsl]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true
+    },
+    "C_Cpp.clang_format_style": "file:${workspaceFolder}/glsl.clang-format"
 }

@@ -1,0 +1,59 @@
+# --- .clang-format ---
+Language: Cpp # GLSL is C-like, Cpp is the closest match for clang-format
+BasedOnStyle: LLVM # Start with LLVM and customize
+
+# Indentation
+IndentWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4 # Indentation for line continuations
+
+# Brace Style
+# This is a mixed style: Allman for functions, K&R for control statements.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true          # For void myFunc()\n{ (Allman for functions)
+  AfterControlStatement: false # For if (cond) { (K&R for if, for, while, etc.)
+  AfterEnum: true              # Consistent with AfterFunction for enum declarations
+  AfterStruct: true            # Consistent with AfterFunction for struct declarations
+  AfterUnion: true             # Consistent with AfterFunction for union declarations
+  AfterExternBlock: true       # For extern "C"\n{
+  BeforeElse: false            # For } else {
+  # IndentBraces: false        # Default for LLVM is false, braces are not further indented
+
+# Spacing
+SpaceBeforeParens: ControlStatements # Puts space after 'if', 'for', 'while', but not for function calls like 'myFunction()'
+SpaceAfterComma: true
+SpaceBeforeCpp11BracedList: false # For {1, 2, 3} style initializers
+SpacesInParentheses: false
+SpacesInAngles: false # For <template_args>, though not directly GLSL
+SpaceAroundOperators: true # For binary operators like +, -, *, /, =, ==, <=, etc.
+
+# Alignment
+AlignConsecutiveDeclarations: true # Crucial for aligning 'uniform', 'in', 'out' blocks
+AlignTrailingComments: true
+# AlignOperands: Align # Aligns operands of binary/ternary expressions
+
+# Line Breaks and Wrapping
+ColumnLimit: 100 # Adjust as preferred; your example has relatively short lines.
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never # Ensures 'if (cond) statement;' becomes 'if (cond) { statement; }' or similar
+AllowShortLoopsOnASingleLine: Never
+AllowShortBlocksOnASingleLine: false # If a block is just one statement within braces, don't put on one line.
+BinPackParameters: false # If function parameters exceed ColumnLimit, put each on a new line
+
+# Comments
+FixNamespaceComments: false # GLSL doesn't have namespaces
+
+# Pointer and Reference Alignment (More C++ specific, but good to set defaults)
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Preprocessor Directives
+# IndentPPDirectives: None # Ensures '#' starts at column 0.
+                           # Code within #if/#else/#endif will be indented by normal rules.
+# LLVM default usually handles preprocessor directives well at global scope.
+# If you find '#' being indented where it shouldn't, uncomment 'IndentPPDirectives: None'.
+
+# Other
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false

@@ -29,7 +29,7 @@ typedef enum
 {
     QO_COLORSPACE_RGB24 = 0,
     QO_COLORSPACE_RGBA32 ,
-    QO_COLORSPACE_GRAY8     //< Hardware backends not implemented
+    QO_COLORSPACE_GRAY8     //< Hardware backends not implemented (THIS COMMENT IS OUTDATED)
 } QO_Colorspace;
 
 typedef enum 

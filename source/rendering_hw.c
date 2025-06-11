@@ -174,8 +174,8 @@ __qo_egl_canvas_init(
     QO_Color            default_background_color
 ) {
     // We use FBO
-    GLuint color_texture;
-    
+    GLuint color_texture , fbo;
+    glGenFramebuffers(1 , &fbo);
 }
 
 void

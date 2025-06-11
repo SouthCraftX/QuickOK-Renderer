@@ -2,6 +2,7 @@
 #include <math.h>
 #include <mimalloc.h>
 #include <string.h>
+#include <inttypes.h> // for PRIdMAX
 #include <time.h>
 
 #define U_USING_ICU_NAMESPACE  0
@@ -21,6 +22,8 @@ struct __OrderList
     qo_size_t      capacity;
 };
 typedef struct __OrderList _OrderList;
+
+#define ENTRY_VALUE_DUMMY  0
 
 struct __Entry
 {
@@ -68,6 +71,7 @@ struct _QOR_GraphemeCollector
     UErrorCode        last_error;
     qo_ref_count_t    ref_count;
 };
+
 qo_stat_t
 // returns true if failed
 order_list_init(
@@ -75,8 +79,8 @@ order_list_init(
     qo_size_t    initial_capacity
 ) {
     initial_capacity = initial_capacity ? initial_capacity : 8;
-    list->items = (qo_ccstring_t *) mi_malloc(
-        initial_capacity * sizeof(qo_ccstring_t)
+    list->items = (qo_cstring_t *) mi_malloc(
+        initial_capacity * sizeof(qo_cstring_t)
     );
 
     if (list->items)
@@ -87,6 +91,7 @@ order_list_init(
     }
     return QO_OUT_OF_MEMORY;
 }
+
 void
 order_list_destroy(
     _OrderList * list
@@ -97,6 +102,7 @@ order_list_destroy(
     }
     mi_free(list->items);
 }
+
 qo_bool_t
 // returns true if failed
 order_list_add(
@@ -106,8 +112,8 @@ order_list_add(
     if (list->size == list->capacity)
     {
         qo_size_t  new_capacity = list->capacity ? list->capacity * 2 : 8;
-        qo_ccstring_t * new_items = (qo_ccstring_t *) mi_realloc(list->items ,
-            new_capacity * sizeof(qo_ccstring_t));
+        qo_cstring_t * new_items = mi_reallocn_tp(list->items, qo_cstring_t, new_capacity);
+
         if (!new_items)
         {
             return qo_true;
@@ -118,6 +124,7 @@ order_list_add(
     list->items[list->size++] = item; // take ownership of item
     return qo_false;
 }
+
 qo_uint64_t
 funnel_sz_hash_initial(
     qo_ccstring_t  str ,
@@ -131,6 +138,7 @@ funnel_sz_hash_initial(
     sz_u64_t   h64 = sz_hash(str , len);
     return h64 ^ (qo_uint64_t) salt;
 }
+
 qo_uint64_t
 funnel_sz_hash_step(
     qo_ccstring_t  str
@@ -145,6 +153,7 @@ funnel_sz_hash_step(
     qo_uint64_t  step64 = (h64 * prime_multiplier) ^ (h64 >> 31);
     return step64 | 1;
 }
+
 qo_size_t
 calculate_probe_limit(
     qo_size_t  capacity
@@ -155,6 +164,7 @@ calculate_probe_limit(
     }
     return (qo_size_t) ceilf(logf((qo_fp32_t) capacity) * 3.0f);
 }
+
 // Cleanup function adapted for strings
 static void
 funnel_levels_destroy(
@@ -191,6 +201,7 @@ funnel_levels_destroy(
     ht->level_occupancy = NULL;
     ht->num_levels = 0; // Reset level count
 }
+
 static qo_stat_t
 funnel_levels_init(
     _FunnelHashTable * ht
@@ -252,7 +263,7 @@ funnel_levels_init(
         snprintf(level_id_str , sizeof(level_id_str) , "Level %d" , i);
         qo_uint64_t  level_hash64 = funnel_sz_hash_initial(level_id_str ,
             ht->special_salt);
-        ht->level_salts[i]  = (qo_uint32_t) (level_hash64 ^ (level_hash64 >>
+        ht->level_salts[i] = (qo_uint32_t) (level_hash64 ^ (level_hash64 >>
             32));
         ht->level_salts[i] ^= (0x9e3779b9 + i);
     }
@@ -292,6 +303,7 @@ funnel_levels_init(
     }
     return true;
 }
+
 qo_stat_t
 funnel_hash_table_init(
     _FunnelHashTable * ht ,
@@ -336,8 +348,10 @@ funnel_hash_table_init(
     }
 
     char  salt_base_str[64];
-    snprintf(salt_base_str , sizeof(salt_base_str) , "FunnelSaltBase%p_T%ld" ,
-        ht , time(NULL));
+    snprintf(salt_base_str , sizeof(salt_base_str) ,
+        "FunnelSaltBase%p_T%" PRIdMAX , ht , time(NULL));
+    // It is a shit that the size of time_t is long long in Windows but long in Linux
+    // I have to use PRIdMAX
 
     if (!funnel_levels_init(ht))
     {
@@ -348,6 +362,7 @@ funnel_hash_table_init(
     ht->last_icu_error = U_ZERO_ERROR;
     return QO_OK;
 }
+
 void
 funnel_hash_table_destroy(
     _FunnelHashTable * ht
@@ -374,6 +389,7 @@ funnel_hash_table_destroy(
         ht->special_array = NULL;
     }
 }
+
 qo_bool_t
 funnel_hash_table_search(
     const _FunnelHashTable * ht ,
@@ -457,6 +473,8 @@ funnel_hash_table_search(
     }
     return false; // Not found after probing
 }
+
+// Return: true if inserted, false if failed
 qo_bool_t
 funnel_insert(
     _FunnelHashTable * ht ,
@@ -559,6 +577,7 @@ funnel_insert(
     //       key_to_insert, ht->probe_limit);
     return false; // Insertion failed (probe limit reached)
 }
+
 qo_stat_t
 grapheme_collector_new(
     QOR_GraphemeCollector ** p_collector ,
@@ -594,27 +613,31 @@ grapheme_collector_new(
     *p_collector = collector;
     return QO_OK;
 }
+
 void
-qor_grapheme_collector_unref(
+qor_grapheme_collector_delete(
     QOR_GraphemeCollector * collector
 ) {
-    if (collector && --(collector->ref_count) == 0)
+    if (collector)
     {
         order_list_destroy(&collector->order_list);
         funnel_hash_table_destroy(&collector->ht);
         mi_free(collector);
     }
 }
+
 qo_stat_t
-qor_collect_utf16_grapheme(
-    QOR_GraphemeCollector * collector,
-    UChar const *           text,
-    qo_size_t                text_len
+qor_sample_utf16_grapheme(
+    QOR_GraphemeCollector * collector ,
+    UChar const *           text ,
+    qo_size_t               text_len
 ) {
     if (!collector || !text || !text_len)
     {
         return QO_INVALID_ARG;
     }
+
+    qo_bool_t  overall_success = true;
 
     UErrorCode  status = U_ZERO_ERROR;
     UNormalizer2 const * nfc_normalizer = unorm2_getNFCInstance(&status);
@@ -625,20 +648,22 @@ qor_collect_utf16_grapheme(
     }
 
     status = U_ZERO_ERROR;
-    qo_int32_t normalized_utf16_len =
-        unorm2_normalize(nfc_normalizer, text, text_len, NULL, 0, &status);
+    qo_int32_t  normalized_utf16_len =
+        unorm2_normalize(nfc_normalizer , text , text_len , NULL , 0 , &status);
     if (U_FAILURE(status) && status != U_BUFFER_OVERFLOW_ERROR)
     {
         collector->last_error = status;
         return QO_UNKNOWN_ERROR;
     }
 
+    // Normalized string is empty
     if (normalized_utf16_len <= 0)
     {
         return QO_INVALID_ARG;
     }
 
-    UChar * normalized_utf16_buffer = (UChar *) mi_mallocn_tp(UChar, normalized_utf16_len);
+    UChar * normalized_utf16_buffer = (UChar *) mi_mallocn_tp(UChar ,
+        normalized_utf16_len);
     if (!normalized_utf16_buffer)
     {
         collector->last_error = U_MEMORY_ALLOCATION_ERROR;
@@ -646,8 +671,8 @@ qor_collect_utf16_grapheme(
     }
 
     status = U_ZERO_ERROR;
-    unorm2_normalize(nfc_normalizer, text, text_len, normalized_utf16_buffer,
-        normalized_utf16_len, &status);
+    unorm2_normalize(nfc_normalizer , text , text_len ,
+        normalized_utf16_buffer , normalized_utf16_len , &status);
     if (U_FAILURE(status))
     {
         collector->last_error = status;
@@ -656,7 +681,8 @@ qor_collect_utf16_grapheme(
     }
 
     status = U_ZERO_ERROR;
-    UBreakIterator * break_iterator = ubrk_open(UBRK_CHARACTER, "" , normalized_utf16_buffer, normalized_utf16_len, &status);
+    UBreakIterator * break_iterator = ubrk_open(UBRK_CHARACTER , "" ,
+        normalized_utf16_buffer , normalized_utf16_len , &status);
     if (U_FAILURE(status) || !break_iterator)
     {
         collector->last_error = status;
@@ -664,23 +690,23 @@ qor_collect_utf16_grapheme(
         return QO_UNKNOWN_ERROR;
     }
 
-    qo_int32_t start_boundary = ubrk_first(break_iterator);
-    qo_int32_t end_boundary;
-    qo_cstring_t current_grapheme_utf8 = NULL;
+    qo_int32_t  start_boundary = ubrk_first(break_iterator);
+    qo_int32_t  end_boundary = 0;
+    qo_cstring_t  current_grapheme_utf8 = NULL;
 
-    while((end_boundary = ubrk_next(break_iterator)) != UBRK_DONE)
+    while ((end_boundary = ubrk_next(break_iterator)) != UBRK_DONE)
     {
-        qo_int32_t grapheme_utf16_len = end_boundary - start_boundary;
+        qo_int32_t  grapheme_utf16_len = end_boundary - start_boundary;
         if (grapheme_utf16_len > 0)
         {
-            qo_int32_t grapheme_utf8_len = 0;
+            qo_int32_t  grapheme_utf8_len = 0;
             current_grapheme_utf8 = NULL;
 
-            // 计算转换为UTF-8后需要的缓冲区大小
+            // Calculate the buffer size needed for conversion to UTF-8
             status = U_ZERO_ERROR;
-            grapheme_utf8_len = u_strToUTF8(NULL, 0, &grapheme_utf8_len, 
-                normalized_utf16_buffer + start_boundary, grapheme_utf16_len, &status);
-            
+            grapheme_utf8_len = u_strToUTF8(NULL , 0 , &grapheme_utf8_len ,
+                normalized_utf16_buffer + start_boundary , grapheme_utf16_len ,
+                &status);
             if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status))
             {
                 collector->last_error = status;
@@ -688,9 +714,11 @@ qor_collect_utf16_grapheme(
                 mi_free(normalized_utf16_buffer);
                 return QO_UNKNOWN_ERROR;
             }
-            
+
             // 分配UTF-8缓冲区
-            current_grapheme_utf8 = (qo_cstring_t)mi_malloc(grapheme_utf8_len + 1);
+            current_grapheme_utf8 = (qo_cstring_t) mi_malloc(
+                grapheme_utf8_len + 1
+            );
             if (!current_grapheme_utf8)
             {
                 collector->last_error = U_MEMORY_ALLOCATION_ERROR;
@@ -698,12 +726,12 @@ qor_collect_utf16_grapheme(
                 mi_free(normalized_utf16_buffer);
                 return QO_OUT_OF_MEMORY;
             }
-            
+
             // 执行UTF-16到UTF-8的转换
             status = U_ZERO_ERROR;
-            u_strToUTF8(current_grapheme_utf8, grapheme_utf8_len + 1, NULL,
-                normalized_utf16_buffer + start_boundary, grapheme_utf16_len, &status);
-            
+            u_strToUTF8(current_grapheme_utf8 , grapheme_utf8_len + 1 , NULL ,
+                normalized_utf16_buffer + start_boundary , grapheme_utf16_len ,
+                &status);
             if (U_FAILURE(status))
             {
                 collector->last_error = status;
@@ -712,181 +740,127 @@ qor_collect_utf16_grapheme(
                 mi_free(normalized_utf16_buffer);
                 return QO_UNKNOWN_ERROR;
             }
-            
-            // 确保字符串以NULL结尾
-            current_grapheme_utf8[grapheme_utf8_len] = '\0';
-            
-            // 将字素添加到哈希表和有序列表中
-            if (!funnel_insert(&collector->ht, current_grapheme_utf8, 0))
+
+            // I tested on another individual case and it seems unnecessary
+            // current_grapheme_utf8[grapheme_utf8_len] = '\0';
+
+            qo_cstring_t  grapheme_copy_for_table =
+                mi_strdup(current_grapheme_utf8);
+            if (!grapheme_copy_for_table)
             {
-                // 如果插入失败，释放内存
+                collector->last_error = U_MEMORY_ALLOCATION_ERROR;
                 mi_free(current_grapheme_utf8);
+                current_grapheme_utf8 = NULL;
+                break;
             }
-            else
+
+            if (funnel_insert(&collector->ht , grapheme_copy_for_table ,
+                ENTRY_VALUE_DUMMY))
             {
-                // 如果插入成功，将字素添加到有序列表
-                if (order_list_add(&collector->order_list, current_grapheme_utf8))
+                qo_cstring_t  grapheme_copy_for_list =
+                    mi_strdup(current_grapheme_utf8);
+                if (!grapheme_copy_for_list)
                 {
-                    // 如果添加到有序列表失败，从哈希表中移除并释放内存
-                    // 注意：这里假设有一个从哈希表中移除的函数，但在代码中没有看到
-                    // 所以这里可能需要进一步完善
+                    overall_success = false;
+                    collector->last_error = U_MEMORY_ALLOCATION_ERROR;
                     mi_free(current_grapheme_utf8);
+                    current_grapheme_utf8 = NULL;
+                    break;
+                }
+
+                if (!order_list_add(&collector->order_list ,
+                    grapheme_copy_for_list))
+                {
+                    overall_success = false;
+                    collector->last_error = U_MEMORY_ALLOCATION_ERROR;
+                    mi_free(current_grapheme_utf8);
+                    mi_free(grapheme_copy_for_list);
+                    current_grapheme_utf8 = NULL;
+                    break;
                 }
             }
+            else  // Insertion failed
+            {
+                free(grapheme_copy_for_table);
+                grapheme_copy_for_table = NULL;
+            }
+
+            mi_free(current_grapheme_utf8); // mi_free can safely handle nullptr
+            current_grapheme_utf8 = NULL;
         }
-        
-        // 更新边界
+
         start_boundary = end_boundary;
-    }
-    
-    // 清理资源
+    } // End of while loop
+
+    // They are all safe to pass nullptr
     ubrk_close(break_iterator);
     mi_free(normalized_utf16_buffer);
-    
-    return QO_OK;
+    mi_free(current_grapheme_utf8);
+    return overall_success ? QO_OK : QO_UNKNOWN_ERROR;
 }
 
 // ... existing code ...
-
 qo_stat_t
-qor_collect_utf8_grapheme(
-    QOR_GraphemeCollector * collector,
-    qo_ccstring_t           utf8_text
+qor_sample_utf8_grapheme(
+    QOR_GraphemeCollector * collector ,
+    qo_ccstring_t           utf8_text ,
+    qo_size_t               utf8_len
 ) {
-    if (!collector || !utf8_text)
+    if (!collector || !utf8_text || !utf8_len)
     {
         return QO_INVALID_ARG;
     }
+    collector->last_error = U_ZERO_ERROR;
 
-    UErrorCode status = U_ZERO_ERROR;
-    UNormalizer2 const * nfc_normalizer = unorm2_getNFCInstance(&status);
-    if (U_FAILURE(status))
+    UErrorCode  status = U_ZERO_ERROR;
+    UChar * utf16_buffer  = NULL;
+    qo_int32_t  utf16_len = 0;
+
+    // Get the buffer size needed for conversion to UTF-16
+    u_strFromUTF8(NULL , 0 , &utf16_len , utf8_text , utf8_len , &status);
+    if (status != U_BUFFER_OVERFLOW_ERROR && U_FAILURE(status))
     {
         collector->last_error = status;
         return QO_UNKNOWN_ERROR;
     }
-
-    // 计算UTF-8字符串的长度
-    qo_size_t utf8_len = strlen(utf8_text);
-    if (utf8_len == 0)
-    {
-        return QO_OK; // 空字符串，直接返回成功
-    }
-
-    // 计算NFC规范化后的UTF-8字符串所需的缓冲区大小
-    status = U_ZERO_ERROR;
-    qo_int32_t normalized_utf8_len = unorm2_normalize(nfc_normalizer, 
-        utf8_text, utf8_len, NULL, 0, &status);
-    
-    if (U_FAILURE(status) && status != U_BUFFER_OVERFLOW_ERROR)
-    {
-        collector->last_error = status;
-        return QO_UNKNOWN_ERROR;
-    }
-
-    if (normalized_utf8_len <= 0)
+    // We receive an empty string
+    if (utf16_len <= 0)
     {
         return QO_INVALID_ARG;
     }
 
-    // 分配NFC规范化后的UTF-8缓冲区
-    qo_cstring_t normalized_utf8_buffer = (qo_cstring_t)mi_malloc(normalized_utf8_len + 1);
-    if (!normalized_utf8_buffer)
+    utf16_buffer = (UChar *) mi_mallocn_tp(UChar , utf16_len + 1);
+    if (!utf16_buffer)
     {
         collector->last_error = U_MEMORY_ALLOCATION_ERROR;
         return QO_OUT_OF_MEMORY;
     }
 
-    // 执行NFC规范化
+    // Perform true conversion
     status = U_ZERO_ERROR;
-    unorm2_normalize(nfc_normalizer, utf8_text, utf8_len, 
-        normalized_utf8_buffer, normalized_utf8_len + 1, &status);
-    
+    u_strFromUTF8(utf16_buffer , utf16_len + 1 , NULL , utf8_text , utf8_len ,
+        &status);
     if (U_FAILURE(status))
     {
         collector->last_error = status;
-        mi_free(normalized_utf8_buffer);
-        return QO_UNKNOWN_ERROR;
-    }
-    
-    // 确保字符串以NULL结尾
-    normalized_utf8_buffer[normalized_utf8_len] = '\0';
-
-    // 创建UTF-8字符边界迭代器
-    status = U_ZERO_ERROR;
-    UBreakIterator * break_iterator = ubrk_open(UBRK_CHARACTER, "", 
-        normalized_utf8_buffer, normalized_utf8_len, &status);
-    
-    if (U_FAILURE(status) || !break_iterator)
-    {
-        collector->last_error = status;
-        mi_free(normalized_utf8_buffer);
+        mi_free(utf16_buffer);
         return QO_UNKNOWN_ERROR;
     }
 
-    // 遍历所有字素边界
-    qo_int32_t start_boundary = ubrk_first(break_iterator);
-    qo_int32_t end_boundary;
-    
-    while ((end_boundary = ubrk_next(break_iterator)) != UBRK_DONE)
-    {
-        qo_int32_t grapheme_len = end_boundary - start_boundary;
-        if (grapheme_len > 0)
-        {
-            // 为当前字素分配内存
-            qo_cstring_t current_grapheme = (qo_cstring_t)mi_malloc(grapheme_len + 1);
-            if (!current_grapheme)
-            {
-                collector->last_error = U_MEMORY_ALLOCATION_ERROR;
-                ubrk_close(break_iterator);
-                mi_free(normalized_utf8_buffer);
-                return QO_OUT_OF_MEMORY;
-            }
-            
-            // 复制字素
-            memcpy(current_grapheme, normalized_utf8_buffer + start_boundary, grapheme_len);
-            current_grapheme[grapheme_len] = '\0';
-            
-            // 将字素添加到哈希表和有序列表中
-            if (!funnel_insert(&collector->ht, current_grapheme, 0))
-            {
-                // 如果插入失败，释放内存
-                mi_free(current_grapheme);
-            }
-            else
-            {
-                // 如果插入成功，将字素添加到有序列表
-                if (order_list_add(&collector->order_list, current_grapheme))
-                {
-                    // 如果添加到有序列表失败，释放内存
-                    // 注意：这里假设哈希表已经拥有了字符串的所有权
-                    mi_free(current_grapheme);
-                }
-            }
-        }
-        
-        // 更新边界
-        start_boundary = end_boundary;
-    }
-    
-    // 清理资源
-    ubrk_close(break_iterator);
-    mi_free(normalized_utf8_buffer);
-    
-    return QO_OK;
+    // Notice: the converted string is NOT normalized
+    // So we let qor_sample_utf16_grapheme do it
+    qo_stat_t  ret = qor_sample_utf16_grapheme(collector , utf16_buffer ,
+        utf16_len);
+    mi_free(utf16_buffer);
+    return ret;
 }
-// ... existing code ...
 
-QOR_GraphemesView
+qo_stat_t
 qor_grapheme_collector_view(
-    QOR_GraphemeCollector * collector
+    QOR_GraphemeCollector *     collector ,
+    QOR_GraphemeCollectorView * view
 ) {
-    if (!collector)
-        return (QOR_GraphemesView){0};
-
-    QOR_GraphemesView view = {
-        .utf_characters = collector->order_list.items,
-        .count = collector->order_list.size
-    };
-    return view;
+    view->graphemes = (qo_ccstring_t *) collector->order_list.items;
+    view->count = collector->order_list.size;
+    return QO_OK;
 }

@@ -1,0 +1,110 @@
+#version 450
+#define WORKGROUP_SIZE_X 16
+#define WORKGROUP_SIZE_Y 8 
+/**
+ * @file rgba_to_yuv420p.comp
+ * @brief 极致优化的计算着色器，将RGBA8图像转换为YUV420p（I420）平面格式。
+ *
+ * 核心策略与NV12版本相同，但适配了YUV420p的三个独立输出平面。
+ */
+
+// 工作组大小: 16x8=128 线程
+layout (local_size_x = WORKGROUP_SIZE_X, local_size_y = WORKGROUP_SIZE_Y, local_size_z = 1) in;
+
+// 绑定0: 输入的RGBA8图像
+layout (binding = 0, rgba8) uniform readonly image2D u_input_rgba;
+// 绑定1: 输出的Y平面 (全分辨率)，格式 r8
+layout (binding = 1, r8) uniform writeonly image2D u_output_y;
+// 绑定2: 输出的U平面 (半分辨率)，格式 r8
+layout (binding = 2, r8) uniform writeonly image2D u_output_u;
+// 绑定3: 输出的V平面 (半分辨率)，格式 r8
+layout (binding = 3, r8) uniform writeonly image2D u_output_v;
+
+// ITU-R BT.709 (HDTV) 标准的转换矩阵行向量
+const vec3 C_RGB_TO_Y = vec3(0.2126,  0.7152,  0.0722);
+const vec3 C_RGB_TO_U = vec3(-0.1146, -0.3854,  0.5000);
+const vec3 C_RGB_TO_V = vec3(0.5000, -0.4542, -0.0458);
+
+// 共享内存: 缓存原始RGB数据，采用带光环的瓦片化策略。
+// 尺寸为 (16+1) x (8+1) 以存储核心块和1像素的光环。
+shared vec3 s_rgb_cache[9][17]; // [y][x] 布局
+
+void main() {
+    // ---- 1. 初始化与坐标计算 ----
+    ivec2 global_coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 local_coord  = ivec2(gl_LocalInvocationID.xy);
+    ivec2 image_size   = imageSize(u_input_rgba);
+
+    // ---- 2. 协同加载数据到共享内存 (瓦片化核心步骤) ----
+    
+    // a) 每个线程加载其对应的主像素
+    if (global_coord.x < image_size.x && global_coord.y < image_size.y) {
+        s_rgb_cache[local_coord.y][local_coord.x] = imageLoad(u_input_rgba, global_coord).rgb;
+    } else {
+        s_rgb_cache[local_coord.y][local_coord.x] = vec3(0.0); // 图像外的像素置黑
+    }
+
+    // b) 边界线程加载光环数据
+    // 右侧光环
+    if (local_coord.x == 15) {
+        ivec2 halo_coord = global_coord + ivec2(1, 0);
+        if (halo_coord.x < image_size.x && halo_coord.y < image_size.y) {
+            s_rgb_cache[local_coord.y][16] = imageLoad(u_input_rgba, halo_coord).rgb;
+        } else {
+            s_rgb_cache[local_coord.y][16] = vec3(0.0);
+        }
+    }
+    // 底部光环
+    if (local_coord.y == 7) {
+        ivec2 halo_coord = global_coord + ivec2(0, 1);
+        if (halo_coord.x < image_size.x && halo_coord.y < image_size.y) {
+            s_rgb_cache[8][local_coord.x] = imageLoad(u_input_rgba, halo_coord).rgb;
+        } else {
+            s_rgb_cache[8][local_coord.x] = vec3(0.0);
+        }
+    }
+    // 右下角光环
+    if (local_coord.x == 15 && local_coord.y == 7) {
+        ivec2 halo_coord = global_coord + ivec2(1, 1);
+        if (halo_coord.x < image_size.x && halo_coord.y < image_size.y) {
+            s_rgb_cache[8][16] = imageLoad(u_input_rgba, halo_coord).rgb;
+        } else {
+            s_rgb_cache[8][16] = vec3(0.0);
+        }
+    }
+    
+    // ---- 3. 同步工作组 ----
+    barrier();
+
+    // ---- 4. 计算并写出Y平面 (全分辨率) ----
+    vec3 my_rgb = s_rgb_cache[local_coord.y][local_coord.x];
+    if (global_coord.x < image_size.x && global_coord.y < image_size.y) {
+        imageStore(u_output_y, global_coord, vec4(dot(my_rgb, C_RGB_TO_Y), 0.0, 0.0, 1.0));
+    }
+
+    // ---- 5. 计算并写出U和V平面 (半分辨率) ----
+    //    只有2x2像素块的左上角线程（局部坐标x和y均为偶数）执行。
+    if ((local_coord.x & 1) == 0 && (local_coord.y & 1) == 0) {
+        if (global_coord.x < image_size.x && global_coord.y < image_size.y) {
+            // a) 从共享内存中安全地读取2x2块的RGB值。
+            vec3 rgb00 = s_rgb_cache[local_coord.y    ][local_coord.x    ];
+            vec3 rgb10 = s_rgb_cache[local_coord.y    ][local_coord.x + 1];
+            vec3 rgb01 = s_rgb_cache[local_coord.y + 1][local_coord.x    ];
+            vec3 rgb11 = s_rgb_cache[local_coord.y + 1][local_coord.x + 1];
+
+            // b) 计算平均RGB值。
+            vec3 avg_rgb = (rgb00 + rgb10 + rgb01 + rgb11) * 0.25;
+
+            // c) 计算U和V值，并从[-0.5, 0.5]范围映射到[0, 1]范围。
+            float u = dot(avg_rgb, C_RGB_TO_U) + 0.5;
+            float v = dot(avg_rgb, C_RGB_TO_V) + 0.5;
+
+            // d) 使用位运算计算UV平面的写入坐标 (width/2, height/2)。
+            ivec2 uv_coord = global_coord >> 1;
+
+            // e) 将U和V分别写入到它们各自的平面。
+            imageStore(u_output_u, uv_coord, vec4(u, 0.0, 0.0, 1.0));
+            imageStore(u_output_v, uv_coord, vec4(v, 0.0, 0.0, 1.0));
+        }
+    }
+}

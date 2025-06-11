@@ -1,5 +1,5 @@
 # IDE
-.vscode/*
+.vscode/
 
 # Prerequisites
 *.d
@@ -71,3 +71,5 @@ build.ninja
 
 # Build
 build/*
+
+.vscode/settings.json
