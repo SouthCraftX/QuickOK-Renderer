@@ -1,6 +1,11 @@
 #version 450
-#define WORKGROUP_SIZE_X 16
-#define WORKGROUP_SIZE_Y 8 
+// 定义特化常量并设置默认值 (16x8)
+layout(constant_id = 0) const uint WORKGROUP_SIZE_X = 16;  // 默认16
+layout(constant_id = 1) const uint WORKGROUP_SIZE_Y = 8;   // 默认8
+
+// 使用特化常量定义工作组大小
+// 如果不特化，将使用上面的默认值
+layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 /**
  * @file rgba_to_yuv420p.comp
  * @brief 极致优化的计算着色器，将RGBA8图像转换为YUV420p（I420）平面格式。
@@ -9,7 +14,7 @@
  */
 
 // 工作组大小: 16x8=128 线程
-layout (local_size_x = WORKGROUP_SIZE_X, local_size_y = WORKGROUP_SIZE_Y, local_size_z = 1) in;
+
 
 // 绑定0: 输入的RGBA8图像
 layout (binding = 0, rgba8) uniform readonly image2D u_input_rgba;

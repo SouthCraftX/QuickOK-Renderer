@@ -1,12 +1,17 @@
-#version 300 es
-layout (location = 0) in vec2 a_pos;
-layout (location = 1) in vec2 a_tex_coord;
+// vertex.vert
+#version 450
 
-out vec2 v_tex_coord;
+// 顶点输入
+layout(location = 0) in vec2 in_position;
+layout(location = 1) in vec2 in_tex_coord;
 
-uniform mat4 u_mvp;
+// 输出到片段着色器
+layout(location = 0) out vec2 out_tex_coord;
 
 void main() {
-    v_tex_coord = a_tex_coord;
-    gl_Position = u_mvp * vec4(a_pos, 0.0, 1.0);
+    // 将顶点坐标直接作为裁剪空间坐标（适用于全屏四边形）
+    gl_Position = vec4(in_position, 0.0, 1.0);
+    
+    // 传递纹理坐标
+    out_tex_coord = in_tex_coord;
 }
