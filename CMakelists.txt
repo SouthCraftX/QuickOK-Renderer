@@ -11,9 +11,6 @@ set(QOR_FFMPEG_GIT_TAG n7.1)
 set(QOR_FREETYPE_GIT_REPO https://gitlab.freedesktop.org/freetype/freetype.git)
 set(QOR_FREETYPE_GIT_TAG VER-2.13.3)
 
-set(QOR_ANGLE_GIT_REPO https://chromium.googlesource.com/angle/angle)
-set(QOR_ANGLE_GIT_TAG main)
-
 set(QOR_DEPENDIENICES_DOWNLOAD_PATH ${CMAKE_SOURCE_DIR}/build/downloaded_source)
 set(QOR_DEPENDIENICES_INSTALL_PATH ${CMAKE_SOURCE_DIR}/build/dependencies_root)
 
@@ -30,7 +27,6 @@ endif()
 
 option(USE_SYSTEM_ICU "Try to use system-provided ICU on Windows (fail if not found)" OFF)
 option(BUILD_FFMPEG_REFER_TO_HOST "Build ffmpeg with arguments that refer to host system, like architecture, encoders." OFF)
-option(BUILD_ANGLE_REFER_TO_HOST "Build angle with arguments that refer to host system, like backends" OFF)
 
 set(FETCHCONTENT_BASE_DIR ${QOR_DEPENDIENICES_DOWNLOAD_PATH} CACHE PATH 
     "Path to store downloaded dependencies")
@@ -340,87 +336,6 @@ find_program(NINJA_EXECUTABLE ninja)
 if(NOT NINJA_EXECUTABLE)
     message(FATAL_ERROR "Ninja not found, required to build ANGLE")
 endif()
-
-# Shrink ANGLE
-set(QOR_ANGLE_GN_ARGS 
-    "is_debug=false"
-    "angle_enable_debug_layers=false" 
-    "symbol_level=0"
-    "angle_enable_trace=false"
-    "angle_enable_vulkan_validation_layers=true" # for security
-    "is_offline_build=true"
-    "angle_enable_precompiled_headers=true"
-    "is_component_build=false"
-    "angle_enable_capture_replay=false"
-    "angle_enable_dynamic_trace_buffer=false"
-    "angle_enable_hlsl=false"
-    "angle_enable_gles1=false"
-    "angle_build_tests=false"
-)
-
-if(${CMAKE_INTERPROCEDURAL_OPTIMIZATION})
-    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} angle_enable_lto=true")
-
-if(${CMAKE_COMPILER_ID} MATCHES "Clang")
-    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=true")
-else()
-    set(QOR_ANGLE_GN_ARGS "${QOR_ANGLE_GN_ARGS} is_clang=false")
-endif()
-
-if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_d3d11=true)
-endif()
-
-if(${CMAKE_SYSTEM_NAME} STREQUAL "windows")
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=windows)
-elseif(${CMAKE_SYSTEM_NAME} STREQUAL "linux")
-    if(${QOR_IS_IN_TERMUX})
-        message(WARNING "Building ANGLE for Termux may not work as expected")
-    endif()
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=linux)
-elseif(${CMAKE_SYSTEM_NAME} STREQUAL "android")
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=android)
-elseif(${CMAKE_SYSTEM_NAME} STREQUAL "mac|ios")
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} target_os=${CMAKE_SYSTEM_NAME})
-endif()
-
-if(DEFINED QOR_ENABLE_SWIFTSHADER_FALLBACK)
-    set(QOR_ANGLE_GN_ARGS ${QOR_ANGLE_GN_ARGS} angle_enable_swiftshader=true)
-endif()
-
-ExternalProject_Add(
-    QOR_ANGLE
-    PREFIX ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle
-    GIT_REPOSITORY ${QOR_ANGLE_GIT_REPO}
-    GIT_TAG ${QOR_ANGLE_GIT_TAG}
-    CONFIGURE_COMMAND ${Python3_EXECUTABLE} 
-        ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/build/gn
-        gen ${QOR_DEPENDIENICES_INSTALL_PATH}/angle
-        --args="${QOR_ANGLE_GN_ARGS}"
-    BUILD_COMMAND ${NINJA_EXECUTABLE} -C ${QOR_DEPENDIENICES_INSTALL_PATH}/angle
-    INSTALL_COMMAND "" # explicit installing is not needed
-    BUILD_BYPRODUCTS 
-    BUILD_ALWAYS OFF
-    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/angle
-    LOG_DIR ${CMAKE_BINARY_DIR}/log/angle
-)
-
-add_library(QOR_libEGL SHARED IMPORTED)
-add_library(QOR_libGLESv2 SHARED IMPORTED)
-
-set_target_properties(QOR_libEGL PROPERTIES 
-    IMPORTED_LOCATION ${QOR_DEPENDIENICES_INSTALL_PATH}/angle/lib/libEGL${CMAKE_SHARED_LIBRARY_SUFFIX}
-    INTERFACE_INCLUDE_DIRECTORIES ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/include
-)
-
-set_target_properties(QOR_libGLESv2 PROPERTIES
-    IMPORTED_LOCATION ${QOR_DEPENDIENICES_INSTALL_PATH}/angle/lib/libGLESv2${CMAKE_SHARED_LIBRARY_SUFFIX}
-    INTERFACE_INCLUDE_DIRECTORIES ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/angle/include
-)
-
-add_dependencies(QOR_libEGL QOR_ANGLE)
-add_dependencies(QOR_libGLESv2 QOR_ANGLE)
-target_link_libraries(QORender PRIVATE QOR_libEGL QOR_libGLESv2)
 
 # -------- Freetype --------
 set(

@@ -1,22 +1,50 @@
 #pragma once
-#include <vulkan/vulkan_core.h>
 #define __QOR_WRAPED_VULKAN_IMAGE_SRC__
 
 #include "rendering_env.h"
 #include "mimalloc_vulkan_callback.h"
+#include <xxh3.h>
 
 struct __WVkImage
 {
-    VkImage        image;
-    VkImageView    default_view;
-    VkExtent3D     extent;  // For 2D image, `depth` is always 1
-    VkFormat       format;
-    VmaAllocation  allocation;
-    qo_uint32_t    mip_levels;
-    qo_uint32_t    array_layers;
-    VkImageLayout  current_layout;
+    // Since _WVKimage is often transfered between objects (like pools)
+    // We need to keep a reference count to manage it's lifetime.
+    qo_ref_count_t         reference_count;
+    VkImage                image;
+    VkImageView            default_view;
+    VkExtent3D             extent; // For 2D image, `depth` is always 1
+    VkFormat               format;
+    VmaAllocation          allocation;
+    qo_uint32_t            mip_levels;
+    qo_uint32_t            array_layers;
+    VkImageLayout          current_layout;
+    VkImageCreateInfo      create_info;
+    _VkDeviceContext *     device_context;
 };
 typedef struct __WVkImage _WVkImage;
+
+typedef XXH64_hash_t VkImageViewCreateInfo_hash_t;
+
+VkResult
+wvkimage_new(
+    _WVkImage ** p_self ,
+    _VkDeviceContext * device_context ,
+    VkImageCreateInfo const * create_info ,
+    VmaAllocationCreateInfo const * alloc_info ,
+    qo_bool_t create_default_view
+);
+
+VkResult
+wvkimage_allocate_memory(
+    _WVkImage * self ,
+    VmaAllocationCreateInfo const * alloc_info 
+);
+
+VkResult
+wvkimage_create_default_view(
+    _WVkImage * self
+);
+
 VkResult
 wvkimage_generate_mipmaps(
     _WVkImage *      self ,
@@ -60,8 +88,13 @@ wvkimage_record_transition(
 
 VkDescriptorImageInfo
 wvkimage_get_descriptor_info(
-    _WVkImage *  self ,
-    VkSampler    sampler
+    _WVkImage * self ,
+    VkSampler   sampler
+);
+
+void
+wvkimage_unref(
+    _WVkImage * self
 );
 
 // // simple path, but lack of customization

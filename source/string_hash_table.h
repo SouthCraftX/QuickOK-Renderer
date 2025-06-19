@@ -47,4 +47,45 @@ struct __FunnelHashSet
     qo_int32_t   value_errors; // Not really applicable here, maybe repurpose?
 };
 typedef struct __FunnelHashSet _FunnelHashTable;
+qo_stat_t
+funnel_hash_table_init(
+    _FunnelHashTable * self ,
+    qo_size_t          capacity ,
+    qo_fp32_t          delta
+);
 
+void
+funnel_hash_table_destroy(
+    _FunnelHashTable * self
+);
+
+qo_bool_t
+funnel_hash_table_search(
+    _FunnelHashTable const * self ,
+    qo_ccstring_t             key ,
+    qo_uint32_t *            p_value
+);
+
+qo_bool_t
+funnel_hash_table_insert(
+    _FunnelHashTable * self ,
+    qo_cstring_t       key ,
+    qo_uint32_t        value
+);
+
+qo_stat_t
+order_list_init(
+    _OrderList * self ,
+    qo_size_t    initial_capacity
+);
+
+void
+order_list_destroy(
+    _OrderList * self
+);
+
+qo_bool_t
+order_list_add(
+    _OrderList *  self ,
+    qo_cstring_t  item
+);
