@@ -12,7 +12,6 @@
 #include <libswscale/swscale.h>
 #include <libavfilter/avfilter.h>
 
-
 struct _QO_VideoEncoder
 {
     qo_ref_count_t  reference_count;

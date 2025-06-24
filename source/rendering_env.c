@@ -17,8 +17,8 @@ qo_rendering_env_resume(
 
 qo_stat_t
 create_vkinstance(
-    _VkContext * context ,
-    qo_flag32_t           flags
+    _VkDeviceContext *      presenting_device_context ,
+    qo_flag32_t             flags
 ) {
     VkApplicationInfo  app_info = {
         .pApplicationName = "QuickOK Renderer" ,
@@ -68,18 +68,18 @@ create_vkinstance(
                    1] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
     }
     instance_create_info.ppEnabledExtensionNames = extensions;
-    context->desired_extensions = extensions;
-    context->desired_extension_count =
+    presenting_device_context->desired_extensions = extensions;
+    presenting_device_context->desired_extension_count =
         instance_create_info.enabledExtensionCount;
 
     // Slowest call. Expect 2000 ms +
-    vkCreateInstance(&instance_create_info , &g_vk_mimallocator , &context->instance);
+    vkCreateInstance(&instance_create_info , get_vk_allocator() , &g_vk_global_context.instance);
 
 }
 
 qo_int32_t
 make_supported_layers_available(
-    _VkContext * context
+    _VkDeviceContext * context
 ) {
     SUPRESS_PTR_SIGN_WARNING_BEGIN; // int <-> uint
     qo_int32_t  layer_count = 0;
@@ -102,7 +102,7 @@ make_supported_layers_available(
 
 qo_int32_t
 make_supported_extensions_available(
-    _VkContext * context
+    _VkDeviceContext * context
 ) {
     switch (context->supported_layer_count)
     {
@@ -164,7 +164,7 @@ make_supported_extensions_available(
 
 qo_int32_t
 get_supported_extensions(
-    _VkContext *    context ,
+    _VkDeviceContext *    context ,
     VkExtensionProperties ** p_extensions
 ) {
 L_BEGIN:
@@ -186,7 +186,7 @@ L_BEGIN:
 
 qo_int32_t
 get_supported_layers(
-    _VkContext * context ,
+    _VkDeviceContext * context ,
     VkLayerProperties **  p_layers
 ) {
 L_BEGIN:
@@ -210,7 +210,7 @@ L_BEGIN:
 // NULL will be returned if all extensions are available
 VkExtensionProperties *
 check_extensions_availability(
-    _VkContext * context ,
+    _VkDeviceContext * context ,
     qo_int32_t            index
 ) {
     VkExtensionProperties * supported_extensions;
@@ -249,7 +249,7 @@ check_extensions_availability(
 
 VkLayerProperties *
 check_layers_availability(
-    _VkContext * context ,
+    _VkDeviceContext * context ,
     qo_int32_t            index
 ) {
     VkLayerProperties * supported_layers;
@@ -348,7 +348,7 @@ qo_find_first_matched_gpu(
 
 void
 create_logical_deivce(
-    _VkContext *   context ,
+    _VkDeviceContext * context,
     _VkQueueFamilyIndexes * p_indexes ,
     _VkQueueFamilyCounts *  capabilities
 ) {
@@ -372,7 +372,7 @@ create_logical_deivce(
     };
 
     // TODO: Error handling
-    vkCreateDevice(context->physical_device , &device_create_info , &g_vk_mimallocator ,
+    vkCreateDevice(context->physical_device , &device_create_info , get_vk_allocator() ,
         &context->logical_device);
     vkGetDeviceQueue(context->logical_device , p_indexes->graphics_families[0] ,
         0 , &context->queues.graphics);
@@ -394,31 +394,27 @@ typedef enum
 } _VkCmdType;
 
 qo_stat_t
-qo_alloc_thread_cmd(
-    _VkContext * context ,
-    _VkThreadLocalCmd *   cmd ,
-    _VkCmdType            type
+make_fmtprops_map(
+    _VkDeviceContext * self
 ) {
-    VkCommandPoolCreateInfo  cmd_pool_create_info = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO ,
-        .pNext = NULL ,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT ,
-        .queueFamilyIndex = context->queue_family_indexes.qfi3[type] ,
+    VkFormat formats[] = {
+        VK_FORMAT_R8G8B8A8_UNORM ,
+        VK_FORMAT_B8G8R8A8_UNORM , // Usually be used in some platforms like Windows
+        VK_FORMAT_R8G8B8A8_SRGB // For swapchain
+        /* TODO: more ...*/
     };
-    // TODO: Error handling
-    vkCreateCommandPool(context->logical_device , &cmd_pool_create_info , &g_vk_mimallocator ,
-        &cmd->command_pools.cp3[type]);
-}
-
-qo_stat_t
-qo_free_thread_cmd(
-    _VkContext * context ,
-    _VkThreadLocalCmd *   cmd ,
-    _VkCmdType            type
-) {
-    vkDestroyCommandPool(context->logical_device ,
-        cmd->command_pools.cp3[type] , &g_vk_mimallocator);
-
+    for (qo_uint32_t i = 0; i < sizeof(formats) / sizeof(VkFormat); i++)
+    {
+        VkFormatProperties  format_properties;
+        vkGetPhysicalDeviceFormatProperties(self->physical_device , formats[i] ,
+            &format_properties);
+        if (!vk_fmtprops_map_insert(&self->format_properties_map , formats[i] ,
+            &format_properties))
+        {
+            return QO_OUT_OF_MEMORY;
+        }
+    }
+    return QO_OK;
 }
 
 #if defined (DEBUG)
@@ -454,7 +450,7 @@ create_debug_messager(
     // TODO: Error handling
     // The only possible error: VK_ERROR_OUT_OF_HOST_MEMORY
     VkResult  result = vkCreateDebugUtilsMessengerEXT(
-        context->instance , &debug_messenger_create_info , &g_vk_mimallocator ,
+        context->instance , &debug_messenger_create_info , get_vk_allocator() ,
         &context->debug_messenger
     );
 }
@@ -464,7 +460,7 @@ destroy_debug_messenger(
     _VkContext * context
 ) {
     vkDestroyDebugUtilsMessengerEXT(context->instance ,
-        context->debug_messenger , &g_vk_mimallocator);
+        context->debug_messenger , get_vk_allocator());
 }
 
 #endif

@@ -1,5 +1,4 @@
 #pragma once
-#include <cstdint>
 #define __QOR_BARRIER_INFEROR_SRC__
 #include "rendering_env.h"
 #include <stdio.h>
@@ -8,8 +7,8 @@
 // Use _NewAccessInfoNew
 struct __LegacyBarrierAccessInfo
 {
-    VkAccessFlags         access_mark;
-    VkPipelineStageFlags  stage_mark;
+    VkAccessFlags         access_mask;
+    VkPipelineStageFlags  stage_mask;
 };
 typedef struct __LegacyBarrierAccessInfo _LegacyBarrierAccessInfo;
 

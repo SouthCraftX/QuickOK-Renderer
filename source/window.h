@@ -83,7 +83,7 @@ window_create_surface(
     VkInstance instance,
     VkSurfaceKHR * surface
 ) {
-    return glfwCreateWindowSurface(instance , self->window , &g_vk_mimallocator , surface);
+    return glfwCreateWindowSurface(instance , self->window , get_vk_allocator() , surface);
 }
 
 VkExtent2D

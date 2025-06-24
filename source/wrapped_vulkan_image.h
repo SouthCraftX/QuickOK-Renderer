@@ -1,43 +1,44 @@
 #pragma once
+#include <vulkan/vulkan_core.h>
 #define __QOR_WRAPED_VULKAN_IMAGE_SRC__
 
 #include "rendering_env.h"
 #include "mimalloc_vulkan_callback.h"
+#include "funnel_hash_table.h"
+#include "vk_image_view_map.h"
 #include <xxh3.h>
 
 struct __WVkImage
 {
     // Since _WVKimage is often transfered between objects (like pools)
     // We need to keep a reference count to manage it's lifetime.
-    qo_ref_count_t         reference_count;
-    VkImage                image;
-    VkImageView            default_view;
-    VkExtent3D             extent; // For 2D image, `depth` is always 1
-    VkFormat               format;
-    VmaAllocation          allocation;
-    qo_uint32_t            mip_levels;
-    qo_uint32_t            array_layers;
-    VkImageLayout          current_layout;
-    VkImageCreateInfo      create_info;
-    _VkDeviceContext *     device_context;
+    qo_ref_count_t     reference_count;
+    VkImage            image;
+    VkImageView        default_view;
+    VkExtent3D         extent;     // For 2D image, `depth` is always 1
+    VkFormat           format;
+    VmaAllocation      allocation;
+    qo_uint32_t        mip_levels;
+    qo_uint32_t        array_layers;
+    VkImageLayout      current_layout;
+    VkImageCreateInfo  create_info;
+    _VkDeviceContext * device_context;
+    _VkImageViewMap    view_map;
 };
 typedef struct __WVkImage _WVkImage;
-
-typedef XXH64_hash_t VkImageViewCreateInfo_hash_t;
-
 VkResult
 wvkimage_new(
-    _WVkImage ** p_self ,
-    _VkDeviceContext * device_context ,
-    VkImageCreateInfo const * create_info ,
+    _WVkImage **                    p_self ,
+    _VkDeviceContext *              device_context ,
+    VkImageCreateInfo const *       create_info ,
     VmaAllocationCreateInfo const * alloc_info ,
-    qo_bool_t create_default_view
+    qo_bool_t                       create_default_view
 );
 
 VkResult
 wvkimage_allocate_memory(
-    _WVkImage * self ,
-    VmaAllocationCreateInfo const * alloc_info 
+    _WVkImage *                     self ,
+    VmaAllocationCreateInfo const * alloc_info
 );
 
 VkResult

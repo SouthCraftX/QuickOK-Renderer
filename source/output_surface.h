@@ -58,14 +58,14 @@ struct __IOutputSurface
 
     _OutputSurfaceAcquireResult
     (* acquire_next_image)(
-        _IOutputSurface * self ,
+        _IOutputSurface *    self ,
         qo_int32_t *         p_image_index ,
         VkSemaphore          image_ready_semaphore
     );
 
     qo_bool_t
     (* present)(
-        _IOutputSurface * self ,
+        _IOutputSurface *    self ,
         qo_int32_t           image_index ,
         VkQueue              present_queue ,
         VkSemaphore          render_finished_semaphore

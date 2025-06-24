@@ -1,83 +1,23 @@
 #include "wrapped_vulkan_image.h"
 #include "mimalloc_vulkan_callback.h"
+#include "access_info_inferor.h"
 #include "rendering_env.h"
+#include "vk_image_view_map.h"
 #include <mimalloc.h>
 #include <vulkan/vulkan_core.h>
 #include <xxh3.h>
 
 /* Compare functions */
-// We can't directly use memcmp() because padding in structure may cause false negative
-qo_bool_t
-vk_component_mapping_compare(
-    VkComponentMapping const * lhs ,
-    VkComponentMapping const * rhs
-) {
-    return (
-        lhs->r == rhs->r &&
-        lhs->g == rhs->g &&
-        lhs->b == rhs->b &&
-        lhs->a == rhs->a
-    );
-}
 
-qo_bool_t
-vk_image_subresource_range_compare(
-    VkImageSubresourceRange const * lhs ,
-    VkImageSubresourceRange const * rhs
-) {
-    return (
-        lhs->aspectMask == rhs->aspectMask &&
-        lhs->baseMipLevel == rhs->baseMipLevel &&
-        lhs->levelCount == rhs->levelCount &&
-        lhs->baseArrayLayer == rhs->baseArrayLayer &&
-        lhs->layerCount == rhs->layerCount
-    );
-}
 
-qo_bool_t
-vk_image_view_create_info_compare(
-    VkImageViewCreateInfo const * lhs ,
-    VkImageViewCreateInfo const * rhs
-) {
-    return (
-        lhs->sType == rhs->sType &&
-        vk_component_mapping_compare(&lhs->components , &rhs->components) &&
-        vk_image_subresource_range_compare(&lhs->subresourceRange , &rhs->subresourceRange)
-    );
-}
-
-#define INIT_HASH_SEED 2166136261u
-
-VkImageViewCreateInfo_hash_t
-hash_vk_image_view_creation_info(
-    VkImageViewCreateInfo const * s
-) {
-    XXH3_state_t * const state = XXH3_createState();
-    XXH3_64bits_reset(state);
-    XXH3_64bits_update(state , &s->image , sizeof(VkImage));
-    XXH3_64bits_update(state , &s->viewType , sizeof(VkImageViewType));
-    XXH3_64bits_update(state , &s->format , sizeof(VkFormat));
-    XXH3_64bits_update(state , &s->components.r , sizeof(s->components.r));
-    XXH3_64bits_update(state , &s->components.g , sizeof(s->components.g));
-    XXH3_64bits_update(state , &s->components.b , sizeof(s->components.b));
-    XXH3_64bits_update(state , &s->components.a , sizeof(s->components.a));
-    XXH3_64bits_update(state , &s->subresourceRange.aspectMask , sizeof(s->subresourceRange.aspectMask));
-    XXH3_64bits_update(state , &s->subresourceRange.baseMipLevel , sizeof(s->subresourceRange.baseMipLevel));
-    XXH3_64bits_update(state , &s->subresourceRange.levelCount , sizeof(s->subresourceRange.levelCount));
-    XXH3_64bits_update(state , &s->subresourceRange.baseArrayLayer , sizeof(s->subresourceRange.baseArrayLayer));
-    XXH3_64bits_update(state , &s->subresourceRange.layerCount , sizeof(s->subresourceRange.layerCount));
-    const XXH64_hash_t hash = XXH3_64bits_digest(state);
-    XXH3_freeState(state);
-    return hash;
-}
 
 VkResult
 wvkimage_new(
-    _WVkImage ** p_self,
-    _VkDeviceContext * device_context,
-    VkImageCreateInfo const * create_info,
-    VmaAllocationCreateInfo const * alloc_info,
-    qo_bool_t create_default_view
+    _WVkImage **                    p_self ,
+    _VkDeviceContext *              device_context ,
+    VkImageCreateInfo const *       create_info ,
+    VmaAllocationCreateInfo const * alloc_info ,
+    qo_bool_t                       create_default_view
 ) {
     _WVkImage * self = mi_malloc_tp(_WVkImage);
     //wvkimage_init()
@@ -85,7 +25,7 @@ wvkimage_new(
     {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    VkResult ret = wvkimage_allocate_memory(self , alloc_info);
+    VkResult  ret = wvkimage_allocate_memory(self , alloc_info);
     if (ret != VK_SUCCESS)
     {
         mi_free(self);
@@ -97,55 +37,138 @@ wvkimage_new(
         if (ret != VK_SUCCESS)
         {
             // TODO: other cleanup
-            // mi_free(self);
+            // not simply mi_free(self);
             return ret;
         }
     }
     *p_self = self;
 }
 
-VkResult
+void
+wvkimage_record_layout_transition1(
+    _WVkImage *                  self ,
+    VkCommandBuffer              command_buffer ,
+    VkImageMemoryBarrier const * barrier ,
+    VkPipelineStageFlags         source_stage_mask ,
+    VkPipelineStageFlags         target_stage_mask
+) {
+    if (!source_stage_mask)
+    {
+        source_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    }
+    if (!target_stage_mask)
+    {
+        target_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    }
+    vkCmdPipelineBarrier(command_buffer , source_stage_mask ,
+        target_stage_mask , 0 , 0 , NULL , 0 , NULL , 1 , barrier);
+    self->current_layout = barrier->newLayout;
+}
+
+void
+wvkimage_record_layout_transition2(
+    _WVkImage *                     self ,
+    VkCommandBuffer                 command_buffer ,
+    VkImageLayout                   new_layout ,
+    qo_uint32_t                     source_queue_family ,
+    qo_uint32_t                     target_queue_family ,
+    VkImageSubresourceRange const * p_subresource_range
+) {
+    VkImageLayout  old_layout = self->current_layout;
+    if (old_layout == new_layout &&
+        source_queue_family == target_queue_family &&
+        p_subresource_range == NULL)
+    {
+        return;
+    }
+
+    _LegacyBarrierAccessInfo  source_info =
+        infer_legacy_access_info(old_layout);
+    _LegacyBarrierAccessInfo  target_info =
+        infer_legacy_access_info(new_layout);
+
+    VkImageMemoryBarrier  barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER ,
+        .srcAccessMask = source_info.access_mask ,
+        .dstAccessMask = target_info.access_mask ,
+        .oldLayout = self->current_layout ,
+        .newLayout = new_layout ,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED ,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED ,
+        .image = self->image
+    };
+
+    if (p_subresource_range)
+    {
+        barrier.subresourceRange = *p_subresource_range;
+    }
+    else {
+        barrier.subresourceRange = (VkImageSubresourceRange) {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT ,
+            .baseMipLevel = 0 ,
+            .levelCount = self->mip_levels ,
+            .baseArrayLayer = 0 ,
+            .layerCount = self->array_layers
+        };
+    }
+    wvkimage_record_layout_transition1(self , command_buffer , &barrier ,
+        source_info.stage_mask , target_info.stage_mask);
+}
+
+void
 wvkimage_simple_record_transition(
     _WVkImage *      self ,
     VkCommandBuffer  command_buffer ,
     VkImageLayout    new_layout
 ) {
+    wvkimage_record_layout_transition2(self , command_buffer , new_layout ,
+        VK_QUEUE_FAMILY_IGNORED , VK_QUEUE_FAMILY_IGNORED , NULL);
+}
 
+// TODO: Move it to header
+VkDescriptorImageInfo
+wvkimage_make_descriptor_info(
+    _WVkImage * self ,
+    VkSampler   sampler
+) {
+    VkDescriptorImageInfo  descriptor_info = {
+        .imageLayout = self->current_layout ,
+        .imageView = self->default_view ,
+        .sampler = sampler
+    };
+    return descriptor_info;
 }
 
 VkResult
 wvkimage_init(
-    _WVkImage * self,
+    _WVkImage *               self ,
     VkImageCreateInfo const * create_info ,
-    VkExtent3D  extent ,
-    VkFormat    format ,
-    qo_uint32_t mip_levels ,
-    qo_uint32_t array_layers ,
-    VkDevice    device 
+    VkExtent3D                extent ,
+    VkFormat                  format ,
+    qo_uint32_t               mip_levels ,
+    qo_uint32_t               array_layers ,
+    _VkDeviceContext *       device_context
 ) {
     memset(self , 0 , sizeof(_WVkImage));
-    return vkCreateImage(device , create_info , &g_vk_mimallocator , &self->image);
+    return vkCreateImage(device_context->logical_device , create_info , get_vk_allocator() ,
+        &self->image);
 }
 
 VkResult
 wvkimage_allocate_memory(
-    _WVkImage * self ,
-    VmaAllocationCreateInfo const * alloc_info 
+    _WVkImage *                     self ,
+    VmaAllocationCreateInfo const * alloc_info
 ) {
-    VkResult ret = vmaAllocateMemoryForImage(
-        g_vk_global_context.vma_allocator ,
-        self->image , 
-        alloc_info , 
-        &self->allocation ,
-        NULL // TODO: check this argument's function/feature
+    VkResult  ret = vmaAllocateMemoryForImage(
+        g_vk_global_context.vma_allocator , self->image , alloc_info ,
+        &self->allocation , NULL // TODO: check this argument's function/feature
     );
-    if (ret != VK_SUCCESS) {
+    if (ret != VK_SUCCESS)
+    {
         return ret;
     }
     return vmaBindImageMemory(
-        g_vk_global_context.vma_allocator ,
-        self->allocation ,
-        self->image 
+        g_vk_global_context.vma_allocator , self->allocation , self->image
     );
 }
 
@@ -177,28 +200,31 @@ VkResult
 wvkimage_create_default_view(
     _WVkImage * self
 ) {
-    VkImageViewCreateInfo view_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = self->image,
-        .format = self->create_info.format,
+    VkImageViewCreateInfo  view_info = {
+        .sType  = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO ,
+        .image  = self->image ,
+        .format = self->create_info.format ,
         .components = {}
     };
     switch (self->create_info.imageType)
     {
         case VK_IMAGE_TYPE_1D:
-            view_info.viewType = (self->create_info.arrayLayers > 1) ? 
-                VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D;
+            view_info.viewType = (self->create_info.arrayLayers > 1) ?
+                                 VK_IMAGE_VIEW_TYPE_1D_ARRAY :
+                                 VK_IMAGE_VIEW_TYPE_1D;
             break;
 
         case VK_IMAGE_TYPE_2D:
             if (self->create_info.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
             {
-                view_info.viewType = (self->create_info.arrayLayers > 1) ? 
-                    VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
+                view_info.viewType = (self->create_info.arrayLayers > 1) ?
+                                     VK_IMAGE_VIEW_TYPE_CUBE_ARRAY :
+                                     VK_IMAGE_VIEW_TYPE_CUBE;
             }
             else {
-                view_info.viewType = (self->create_info.arrayLayers > 1) ? 
-                    VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+                view_info.viewType = (self->create_info.arrayLayers > 1) ?
+                                     VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                                     VK_IMAGE_VIEW_TYPE_2D;
             }
             break;
 
@@ -209,13 +235,15 @@ wvkimage_create_default_view(
         default:
             return INT32_MAX; // Unsupported image type for default view creation
     }
-    
-    if (self->create_info.format >= VK_FORMAT_D16_UNORM && self->create_info.format <= VK_FORMAT_D32_SFLOAT_S8_UINT)
+
+    if (self->create_info.format >= VK_FORMAT_D16_UNORM &&
+        self->create_info.format <= VK_FORMAT_D32_SFLOAT_S8_UINT)
     { // This is a depth/stencil format.
         view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         if (self->create_info.format == VK_FORMAT_D24_UNORM_S8_UINT)
         {
-            view_info.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            view_info.subresourceRange.aspectMask |=
+                VK_IMAGE_ASPECT_STENCIL_BIT;
         }
     }
     else { // We assume it is a color format
@@ -227,60 +255,112 @@ wvkimage_create_default_view(
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = self->array_layers;
 
-    return vkCreateImageView(self->device_context->logical_device , &view_info , &g_vk_mimallocator , &self->default_view);
+    return vkCreateImageView(self->device_context->logical_device , &view_info ,
+        get_vk_allocator() , &self->default_view);
 }
 
-VkImageView
+VkResult
 wvkimage_get_view1(
-    _WVkImage * self ,
-    VkImageViewCreateInfo const * view_info
+    _WVkImage *                   self ,
+    VkImageViewCreateInfo const * view_info ,
+    VkImageView *                 p_view
 ) {
+    QO_ASSERT(view_info->image == self->image);
 
+    VkImageView found_view;
+    if (vk_image_view_map_search(&self->view_map, view_info, &found_view))
+    { // Cache hit
+        *p_view = found_view;
+        return VK_SUCCESS;
+    }
+
+    VkImageView new_view;
+    VkResult ret = vkCreateImageView(self->device_context->logical_device , view_info , get_vk_allocator() , &new_view);
+    if (ret != VK_SUCCESS)
+    {
+        return ret;
+    }
+    vk_image_view_map_insert(&self->view_map, view_info, new_view);
+    *p_view = new_view;
+    return VK_SUCCESS;
 }
 
-VkImageView
+VkResult
 wvkimage_get_view2(
-    _WVkImage * self ,
-    VkImageSubresourceRange const * subresource_range 
+    _WVkImage *                     self ,
+    VkImageSubresourceRange const * subresource_range ,
+    VkImageViewType                 auto_or_user_type ,
+    VkImageView *                   p_view
 ) {
-    VkImageViewCreateInfo create_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = self->image,
-        .format = self->format,
-        .subresourceRange = *subresource_range,
+    VkImageViewCreateInfo  create_info = {
+        .sType  = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO ,
+        .image  = self->image ,
+        .format = self->format ,
+        .subresourceRange = *subresource_range ,
+        .components = {} 
     };
-    if (self->array_layers > 1)
+
+    if (auto_or_user_type == VK_IMAGE_VIEW_TYPE_MAX_ENUM)
     {
-        //create_info.viewType = //(create_info.imageInfo.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        // TODO: Same as default view creation. Extract it out!
     }
-    else if (self->extent.height > 1) 
+    else 
     {
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        create_info.viewType = auto_or_user_type;
     }
-    else {
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_1D;
+
+    return wvkimage_get_view1(self, &create_info, p_view);
+
+    // if (self->array_layers > 1)
+    // {
+    //     //create_info.viewType = //(create_info.imageInfo.flags &
+    //     // VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) ? VK_IMAGE_VIEW_TYPE_CUBE :
+    //     // VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    // }
+    // else if (self->extent.height > 1)
+    // {
+    //     create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    // }
+    // else {
+    //     create_info.viewType = VK_IMAGE_VIEW_TYPE_1D;
+    // }
+}
+
+VkResult
+wvkimage_generate_mipmaps(
+    _WVkImage * self ,
+    VkCommandBuffer command_buffer
+) {
+    if (self->mip_levels <= 1)
+    {
+        // TODO: work out a return code
     }
+    
+
 }
 
 void
 wvkimage_destroy(
     _WVkImage * self
 ) {
-    // TODO: Free hash table 
+    // TODO: Free hash table
 
     if (self->default_view != VK_NULL_HANDLE)
     {
-        vkDestroyImageView(self->device_context->logical_device , self->default_view , &g_vk_mimallocator);
+        vkDestroyImageView(self->device_context->logical_device ,
+            self->default_view , get_vk_allocator());
         self->default_view = VK_NULL_HANDLE;
     }
     if (self->image != VK_NULL_HANDLE)
     {
         if (self->allocation != VK_NULL_HANDLE)
         {
-            vmaDestroyImage(g_vk_global_context.vma_allocator , self->image , self->allocation);
+            vmaDestroyImage(g_vk_global_context.vma_allocator , self->image ,
+                self->allocation);
         }
         else {
-            vkDestroyImage(self->device_context->logical_device , self->image , &g_vk_mimallocator);
+            vkDestroyImage(self->device_context->logical_device , self->image ,
+                get_vk_allocator());
         }
     }
     memset(self , 0 , sizeof(_WVkImage));
@@ -290,5 +370,4 @@ VkResult
 wvkimage_create_aliased(
 
 ) {
-    
 }

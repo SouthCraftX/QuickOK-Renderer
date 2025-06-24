@@ -1,11 +1,13 @@
 #pragma once
 #include "mimalloc_vulkan_callback.h"
 #include "../include/renderer.h"
+#include "vk_fmtprops_map.h"
 #include <mimalloc.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
 #include "vk_mem_alloc.h"
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_core.h>
 
 struct __VkQueueFamilyIndexes
 {
@@ -36,9 +38,25 @@ struct __VkGlobalContext
     // We enable it even in release to deliver vulkan-level error
     VkDebugUtilsMessengerEXT    debug_messenger;
     VmaAllocator                vma_allocator;
+    VkAllocationCallbacks       mi_malloc_callbacks;
 };
 typedef struct __VkGlobalContext _VkGlobalContext;
 _VkGlobalContext g_vk_global_context;
+
+QO_FORCE_INLINE
+VkAllocationCallbacks *
+get_vk_allocator()
+{
+    return &g_vk_global_context.mi_malloc_callbacks;
+}
+
+QO_FORCE_INLINE
+VmaAllocator 
+get_vma_allocator()
+{
+    return g_vk_global_context.vma_allocator;
+}
+
 
 // Binding to a specific device
 // One device per context
@@ -91,6 +109,8 @@ struct __VkDeviceContext
 
     VkPipeline                pipeline;
     VkPipelineLayout          pipeline_layout;
+
+    _VkFormatPropertiesMap    format_properties_map;
 };
 typedef struct __VkDeviceContext _VkDeviceContext;
 
