@@ -1,5 +1,6 @@
-#include "vk_image_view_map.h"
+#include "vkimage_view_map.h"
 #include "funnel_hash_table.h"
+#include <vulkan/vulkan_core.h>
 #include <xxh3.h>
 
 typedef XXH64_hash_t VkImageViewCreateInfo_hash_t;
@@ -17,7 +18,7 @@ vk_component_mapping_compare(
 }
 
 qo_bool_t
-vk_image_subresource_range_compare(
+vkimage_subresource_range_compare(
     VkImageSubresourceRange const * lhs ,
     VkImageSubresourceRange const * rhs
 ) {
@@ -30,26 +31,36 @@ vk_image_subresource_range_compare(
     ;
 }
 
+
 qo_bool_t
-vk_image_view_create_info_compare(
+vkimage_view_create_info_compare1(
+    VkImageViewCreateInfo const * const  s1,
+    VkImageViewCreateInfo const * const  s2
+) {
+    return
+        s1->sType == s2->sType &&
+        vk_component_mapping_compare(&s1->components ,
+        &s2->components) &&
+        vkimage_subresource_range_compare(&s1->subresourceRange ,
+        &s2->subresourceRange)
+    ;
+}
+
+qo_bool_t
+vkimage_view_create_info_compare2(
     fht_key_t   key1,
     fht_key_t   key2
 ) {
     VkImageViewCreateInfo const * const  s1 = (VkImageViewCreateInfo const *)key1;
     VkImageViewCreateInfo const * const  s2 = (VkImageViewCreateInfo const *)key2;
-    return
-        s1->sType == s2->sType &&
-        vk_component_mapping_compare(&s1->components ,
-        &s2->components) &&
-        vk_image_subresource_range_compare(&s1->subresourceRange ,
-        &s2->subresourceRange)
-    ;
+    return vkimage_view_create_info_compare1(s1 , s2);
 }
+
 
 #define INIT_HASH_SEED  2166136261u
 
 VkImageViewCreateInfo_hash_t
-hash_vk_image_view_creation_info(
+hash_vkimage_view_creation_info2(
     fht_key_t                       key,
     qo_uint32_t                     salt
 ) {
@@ -79,23 +90,23 @@ hash_vk_image_view_creation_info(
 }
 
 void
-destroy_vk_image_view_info_key(
+destroy_vkimage_view_info_key(
     fht_key_t  key
 ) {
     free((qo_pointer_t)key);
 }
 
 qo_stat_t
-vk_image_view_map_init(
+vkimage_view_map_init(
     _VkImageViewMap *   self
 ) {
     return fht_init(&self->hash_table ,
         sizeof(VkImageViewCreateInfo) ,
         sizeof(VkImageView) ,
         &(_FunnelHashTableAuxiliary){
-            .hash_func = hash_vk_image_view_creation_info,
-            .equals_func = vk_image_view_create_info_compare,
-            .key_destroy_func = destroy_vk_image_view_info_key,
+            .hash_func = hash_vkimage_view_creation_info2,
+            .equals_func = vkimage_view_create_info_compare2,
+            .key_destroy_func = destroy_vkimage_view_info_key,
         });
 }
 

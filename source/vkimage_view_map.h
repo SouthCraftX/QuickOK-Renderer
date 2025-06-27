@@ -1,6 +1,7 @@
 #pragma once
 #define __QOR_VK_IMAGE_VIEW_MAP_SRC__
 
+#include "wrapped_vulkan_image.h"
 #include "funnel_hash_table.h"
 
 struct __VkImageViewMap
@@ -10,34 +11,43 @@ struct __VkImageViewMap
 typedef struct __VkImageViewMap _VkImageViewMap;
 
 qo_stat_t
-vk_image_view_map_init(
+vkimage_view_map_init(
     _VkImageViewMap *   self
 );
 
 void
-vk_image_view_map_destroy(
+vkimage_view_map_destroy(
     _VkImageViewMap *   self
 );
 
 qo_bool_t
-vk_image_view_map_insert(
+vkimage_view_map_insert(
     _VkImageViewMap *               self ,
     VkImageViewCreateInfo const *   key ,
     VkImageView                     value
 );
 
 qo_bool_t
-vk_image_view_map_set(
+vkimage_view_map_set(
     _VkImageViewMap *               self ,
     VkImageViewCreateInfo const *   key ,
     VkImageView                     value
 );
 
 qo_bool_t
-vk_image_view_map_search(
+vkimage_view_map_search(
     _VkImageViewMap const *         self ,
     VkImageViewCreateInfo const *   key ,
     VkImageView *                   p_value
 );
 
+XXH64_hash_t
+hash_vkimage_view_creation_info(
+    VkImageViewCreateInfo *         view_info
+);
 
+qo_bool_t
+vkimage_view_create_info_compare1(
+    VkImageViewCreateInfo const * const  s1,
+    VkImageViewCreateInfo const * const  s2
+);

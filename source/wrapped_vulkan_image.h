@@ -5,7 +5,7 @@
 #include "rendering_env.h"
 #include "mimalloc_vulkan_callback.h"
 #include "funnel_hash_table.h"
-#include "vk_image_view_map.h"
+#include "vkimage_view_map.h"
 #include <xxh3.h>
 
 struct __WVkImage
@@ -21,7 +21,8 @@ struct __WVkImage
     qo_uint32_t        mip_levels;
     qo_uint32_t        array_layers;
     VkImageLayout      current_layout;
-    VkImageCreateInfo  create_info;
+    VkImageCreateInfo  image_info;
+    XXH64_hash_t       image_info_hash;
     _VkDeviceContext * device_context;
     _VkImageViewMap    view_map;
 };
@@ -29,7 +30,7 @@ typedef struct __WVkImage _WVkImage;
 VkResult
 wvkimage_new(
     _WVkImage **                    p_self ,
-    _VkDeviceContext *              device_context ,
+    _VkDeviceContext *             device_context,
     VkImageCreateInfo const *       create_info ,
     VmaAllocationCreateInfo const * alloc_info ,
     qo_bool_t                       create_default_view

@@ -31,7 +31,8 @@ depth_stencil_state_desc_compare(
         desc_x->depth_compare_op == desc_y->depth_compare_op &&
         desc_x->stencil_test_enable == desc_y->stencil_test_enable &&
         desc_x->min_depth_bounds == desc_y->min_depth_bounds && // TODO: epsilon
-        desc_x->max_depth_bounds == desc_y->max_depth_bounds &&
+        !qo_fp32cmp_with_epsilon(desc_x->max_depth_bounds, desc_y->max_depth_bounds, 0.000001f) &&
+        !qo_fp64cmp_with_epsilon(desc_x->min_depth_bounds, desc_y->min_depth_bounds, 0.000001f) &&
         vk_stencil_op_state_compare(&desc_x->front, &desc_y->front) &&
         vk_stencil_op_state_compare(&desc_x->back, &desc_y->back)
     ;

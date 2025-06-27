@@ -102,6 +102,13 @@ fht_insert(
     fht_value_t                 value
 );
 
+qo_bool_t
+fht_set(
+    _FunnelHashTable *          self ,
+    fht_key_t                   key ,
+    fht_value_t                 value
+);
+
 qo_size_t
 fht_get_count(
     _FunnelHashTable const *    self

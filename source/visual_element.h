@@ -2,6 +2,7 @@
 #define __QOR_VISUAL_ELEMENT_SRC__
 
 #include "rendering_env.h"
+#include "classic_vertex.h"
 
 typedef qo_uint64_t  sort_key_t;
 typedef qo_uint64_t  material_id_t;
@@ -37,12 +38,23 @@ struct __IRenderable
 {
     material_id_t 
     (* get_material_id)(
-        _IRenderable* renderable
+        _IRenderable *  self
     );
 
     mesh_id_t
     (* get_mesh_id)(
-        _IRenderable* renderable
+        _IRenderable *  self
+    );
+
+    _Mesh const *
+    (* get_mesh)(
+        _IRenderable *  self
+    );
+
+    qo_size_t
+    (* get_tags)(
+        _IRenderable *  self ,
+        qo_cstring_t *  tags
     );
 };
 
@@ -50,3 +62,16 @@ struct __IVisualElement
 {
 };
 typedef struct __IVisualElement _IVisualElement;
+
+_Mesh *
+mesh_new_from_path(
+    qo_ccstring_t path
+);
+
+_Mesh *
+mesh_new_from_data(
+    _ClassicVertex *    vertices ,
+    qo_uint32_t *       indices ,
+    qo_uint32_t         vertices_count ,
+    qo_uint32_t         indices_count
+);

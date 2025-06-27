@@ -2,7 +2,7 @@
 #include "mimalloc_vulkan_callback.h"
 #include "access_info_inferor.h"
 #include "rendering_env.h"
-#include "vk_image_view_map.h"
+#include "vkimage_view_map.h"
 #include <mimalloc.h>
 #include <vulkan/vulkan_core.h>
 #include <xxh3.h>
@@ -41,6 +41,7 @@ wvkimage_new(
             return ret;
         }
     }
+    self->device_context = device_context;
     *p_self = self;
 }
 
