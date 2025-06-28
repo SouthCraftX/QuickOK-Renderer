@@ -1,525 +1,273 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.16)
 include(ExternalProject)
 include(CMakeParseArguments)
 include(FetchContent)
+include(CheckIPOSupported)
 
-project(QORender LANGUAGES C VERSION 0.0.1)
+check_ipo_supported(RESULT IPO_SUPPORTED)
 
-set(QOR_FFMPEG_GIT_REPO https://github.com/FFmpeg/FFmpeg.git)
-set(QOR_FFMPEG_GIT_TAG n7.1)
+project(QORender VERSION 0.0.1)
 
-set(QOR_FREETYPE_GIT_REPO https://gitlab.freedesktop.org/freetype/freetype.git)
-set(QOR_FREETYPE_GIT_TAG VER-2.13.3)
+option(USE_BUILD_CACHING "Enable ccache/sccache" ON)
+option(ALWAYS_ENABLE_LTO "Always enable LTO" OFF)
 
-set(QOR_DEPENDIENICES_DOWNLOAD_PATH ${CMAKE_SOURCE_DIR}/build/downloaded_source)
-set(QOR_DEPENDIENICES_INSTALL_PATH ${CMAKE_SOURCE_DIR}/build/dependencies_root)
-
-set(QOR_ICU_GIT_REPO https://github.com/unicode-org/icu.git)
-set(QOR_ICU_GIT_TAG release-77-1)
-
-if(NOT DEFINED WINDOWS_SDK32_PATH)
-    set(WINDOWS_SDK_PATH "C:/Program Files (x86)/Windows Kits/10")
+if (USE_BUILD_CACHING)
+    find_program(CCACHE_EXECUTABLE ccache)
+    find_program(SCCACHE_EXECUTABLE sccache)
+    if (CCACHE_EXECUTABLE)
+        message(STATUS "ccache found: ${CCACHE_EXECUTABLE}")
+        set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_EXECUTABLE})
+        set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_EXECUTABLE})
+    elseif(SCCACHE_EXECUTABLE)
+        set(CMAKE_C_COMPILER_LAUNCHER ${SCCACHE_EXECUTABLE})
+        set(CMAKE_CXX_COMPILER_LAUNCHER ${SCCACHE_EXECUTABLE})
+        message(STATUS "sccache found: ${SCCACHE_EXECUTABLE}")
+    else()
+        message(FATAL "ccache or sccache not found, but USE_BUILD_CACHING is ON")
+    endif()
 endif()
-if(NOT DEFINED WINDOWS_SDK64_PATH)
-    set(WINDOWS_SDK_PATH "C:/Program Files/Windows Kits/10")
-endif()
-# include("CMakeDetermine0.0.1Compiler.cmake")
 
-option(USE_SYSTEM_ICU "Try to use system-provided ICU on Windows (fail if not found)" OFF)
-option(BUILD_FFMPEG_REFER_TO_HOST "Build ffmpeg with arguments that refer to host system, like architecture, encoders." OFF)
-
-set(FETCHCONTENT_BASE_DIR ${QOR_DEPENDIENICES_DOWNLOAD_PATH} CACHE PATH 
-    "Path to store downloaded dependencies")
-message(DEBUG "FETCHCONTENT_BASE_DIR: ${FETCHCONTENT_BASE_DIR}")
-
-set(CMAKE_CXX_COMPILER OFF)
+set(STAGING_DIR "${CMAKE_BINARY_DIR}/install")
+message(STATUS "Superbuild staging directory: ${STAGING_DIR}")
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
+message(STATUS "Superbuild using build type: ${CMAKE_BUILD_TYPE}")
 
-function(qor_string_match_ignoring_case x y res)
-    string(TOLOWER "${x}" x_lower)
-    string(TOLOWER "${y}" y_lower)
-    if(x_lower MATCHES y_lower)
-        set(${res} TRUE PARENT_SCOPE)
+set(LTO_CMAKE_FLAG "")
+set(LTO_COMPILER_FLAG "")
+
+if(ENABLE_LTO)
+    check_ipo_supported(RESULT ipo_supported)
+    if(ipo_supported)
+        message(STATUS "LTO/IPO is supported, will be enabled for dependencies.")
+        set(LTO_CMAKE_FLAG
+            "set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE CACHE BOOL \\\"\\\")\\n")
+        set(LTO_COMPILER_FLAG "-flto") # <-- 重命名
     else()
-        set(${res} FALSE PARENT_SCOPE)
-    endif()
-endfunction()
-
-# Way 1
-execute_process(COMMAND bash -c "echo $TERMUX_VERSION"
-                OUTPUT_VARIABLE TERMUX_VERSION
-                ERROR_QUIET
-                RESULT_VARIABLE TERMUX_RESULT
-)
-if(TERMUX_RESULT EQUAL 0 AND NOT TERMUX_VERSION STREQUAL "")
-    set(${QOR_IS_IN_TERMUX} TRUE)
-else()
-    set(${QOR_IS_IN_TERMUX} FALSE)
-endif()
-# Way 2
-if(EXISTS "/data/data/com.termux/files/usr/")
-    set(${QOR_IS_IN_TERMUX} TRUE)
-else()
-    set(${QOR_IS_IN_TERMUX} FALSE)
-endif()
-
-
-# cmake_language(COMPILER_ID_RUN C)
-
-# For clangd
-set(CMAKE_EXPORT_COMPILECOMMANDS ON)
-
-if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
-endif()
-
-
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
-elseif(CMAKE_BUILD_TYPE STREQUAL "ReleWithDebInfo")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -g")
-elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g")
-elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -DNDEBUG")
-else()
-    message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-    set(QOR_STATIC_LIBRARY_EXTENSION ".lib")
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    set(QOR_STATIC_LIBRARY_EXTENSION ".a")
-endif()
-
-if(NOT DEFINED QOR_TARGET_ARCH)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64")
-        set(QOR_TARGET_ARCH "x86_64")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "i686")
-        set(QOR_TARGET_ARCH "x86_32")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-        set(QOR_TARGET_ARCH "arm64")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm32")
-        set(QOR_TARGET_ARCH "arm32")
-    else()
-        message(FATAL_ERROR "Unsupported target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+        message(
+            FATAL
+            "LTO/IPO was requested, but is not supported."
+        )
     endif()
 endif()
 
-set(QOR_DEFAULT_SIMD_FLAGS "native")
-if(NOT DEFINED QOR_SIMD_FLAGS)
-    set(QOR_SIMD_FLAGS ${QOR_DEFAULT_SIMD_FLAGS})
-endif()
-
-set(QOR_FFMPEG_DISABLE_SIMDS "")
-
-message(STATUS "Using SIMD flags: ${QOR_SIMD_FLAGS}")
-
-if(QOR_TARGET_ARCH MATCHES "x86")
-    foreach(flag QOR_SIMD_FLAGS)
-			if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU|LLVM")
-            if(flag MATCHES "native")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native")
-                
-            endif()
-            if(flag MATCHES "avx512icl")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512icl")
-                
-            endif()
-            if(flag MATCHES "avx512f")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512f")
-                
-            endif()
-            if(flag MATCHES "avx512cd")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512cd")
-                
-            endif()
-            if(flag MATCHES "avx512er") 
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512er")
-                
-            endif()
-            if(flag MATCHES "avx512pf")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512pf")
-                
-            endif()
-            if(flag MATCHES "avx512dq")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512dq")
-                
-            endif()
-            if(flag MATCHES "avx512bw")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512bw")
-                
-            endif()
-            if(flag MATCHES "avx512vl")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512vl")
-                
-            endif()
-            if(flag MATCHES "avx512fp16")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx512fp16")
-                
-            endif()
-            if(flag MATCHES "avx2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx2")
-                
-                endif()
-            if(flag MATCHES "avx")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx")
-                
-                endif()
-            if(flag MATCHES "avx10.1")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx10.1")
-                
-            endif()
-            if(flag MATCHES "sse4.2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse4.2")
-                
-            endif()
-            if(flag MATCHES "sse4.1")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse4.1")
-                
-            endif()
-            if(flag MATCHES "sse3")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse3")
-                
-            endif()
-            if(flag MATCHES "ssse3")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mssse3")
-                
-            endif()
-            if(flag MATCHES "sse2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2")
-                
-            endif()
-            if(flag MATCHES "sse")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse")
-                
-            endif()
-            if(flag MATCHES "mmx")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmmx")
-                
-            endif()
-            if(flag MATCHES "pclmuldq")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mpclmuldq")
-                
-            endif()
-            if(flag MATCHES "fma")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfma")
-                
-            endif()
-            if(flag MATCHES "fma4")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfma4")
-                
-            endif()
-        elseif(MSVC)
-            if(flag MATCHES "avx512")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:AVX512")
-                
-            endif()
-            if(flag MATCHES "avx2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:AVX2")
-                
-            endif()
-            if(flag MATCHES "avx")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:AVX")
-                
-            endif()
-            if(flag MATCHES "avx10.1")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:AVX10.1")
-                
-            endif()
-            if(flag MATCHES "sse4.2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE4.2")
-        
-            endif()
-            if(flag MATCHES "sse4.1")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE4.1")
-                
-            endif()
-            if(flag MATCHES "sse3")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE3")
-                
-            endif()
-            if(flag MATCHES "ssse3")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSSE3")
-                
-            endif()
-            if(flag MATCHES "sse2")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE2")
-                
-            endif()
-            if(flag MATCHES "sse")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:SSE")
-                
-            endif()
-            if(flag MATCHES "mmx")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:MMX")
-                
-            endif()
-            if(flag MATCHES "pclmuldq")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:PCLMUL")
-                
-            endif()
-        endif()
-    endforeach()
-elseif(QOR_TARGET_ARCH MATCHES "arm")
-    foreach(flag IN LIST QOR_SIMD_FLAGS)
-        if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-            if(flag MATCHES "neon")
-                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpu=neon")
-            endif()
-        elseif(MSVC)
-            if(flag MATCHES "neon")
-                message(WARN "MSVC does not fully support NEON")
-            endif()
-        endif()
-    endforeach()
-endif()
-
-if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-    set(${CMAKE_INTERPROCEDURAL_OPTIMIZATION} TRUE)
-endif()
-
-# -------- Embedding GLSL ------------
-file(GLOB QOR_SHARED_FILES "${CMAKE_SOURCE_DIR}/shaders/*.*")
-set(QOR_SHADERS_HEADER "${CMAKE_BINARY_DIR}/shaders.h")
-file(WRITE "${QOR_SHADERS_HEADER}" "#pragma once\n"
-     "// This file is auto generated by CMake\n"
-     "DO NOT EDIT\n\n")
-
-foreach(SHADER ${QOR_SHARED_FILES})
-    get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
-    get_filename_component(SHADER_EXT ${SHADER} EXT)
-
-    file(READ ${SHADER} SHADER_CONTENT)
-
-    string(REPLACE "\"" "\\\"" SHADER_CONTENT ${SHADER_CONTENT})
-    string(REPLACE "\n" "\\n\"\n\"" SHADER_CONTENT ${SHADER_CONTENT})
-
-    file(APPEND "${QOR_SHADERS_HEADER}" "#define SHADER_${SHADER_NAME}_${SHADER_EXT} \"${SHADER_CONTENT}\"\n\n")
-endforeach()
-# -----------------------------------
-
-add_executable(QORender source/main.c)
-
-# --------- QOZero ---------
-if(NOT DEFINED QOZERO_SOURCE_ROOT)
-    if(EXISTS ${CMAKE_SOURCE_DIR}/../QOZero)
-        set(QOZERO_SOURCE_ROOT ${CMAKE_SOURCE_DIR}/../QOZero)
-        message(STATUS "QOZERO_SOURCE_ROOT not set but QOZero found in the parent directory")
-    else()
-        message(FATAL_ERROR "QOZERO_SOURCE_ROOT not set and QOZero not found in the parent directory")
-    endif()
-endif()
-target_include_directories(QORender PRIVATE ${QOZERO_SOURCE_ROOT}/include)
-# --------------------------
-
-# --------- QuickOK-Concurrency --------
-if(NOT DEFINED QUICKOK_CONCURRENCY_SOURCE_ROOT)
-    if(EXISTS ${CMAKE_SOURCE_DIR}/../QuickOK-Concurrency)
-        set(QUICKOK_CONCURRENCY_SOURCE_ROOT ${CMAKE_SOURCE_DIR}/../QuickOK-Concurrency)
-        message(STATUS "QUICKOK_CONCURRENCY_SOURCE_ROOT not set but QuickOK-Concurrency found in the parent directory")
-    else()
-        message(FATAL_ERROR "QUICKOK_CONCURRENCY_SOURCE_ROOT not set and QuickOK-Concurrency not found in the parent directory")
-    endif()
-endif()
-
-# --------- EGL ---------
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
-if(NOT Python3_FOUND)
-    message(FATAL_ERROR "Python3 not found, required to build ANGLE")
-endif()
-
-find_program(NINJA_EXECUTABLE ninja)
-if(NOT NINJA_EXECUTABLE)
-    message(FATAL_ERROR "Ninja not found, required to build ANGLE")
-endif()
-
-# -------- Freetype --------
-set(
-    QOR_FREETYPE_BUILD_OPTIONS
-    -DWITH_ZLIB=ON
-    -DWITH_PNG=ON
-    -DWITH_HARFBUZZ=ON
-    -DWITH_FT2_BUILD=ON
-    -DWITH_AUTO_HINTER=ON
-    -DWITH_BROTLI=ON
-    -DWITH_GZIP=ON
-    -DFT_ENABLE_AUTOHINT=ON
-    -j${CMAKE_PARALLEL_LEVEL}
-)
-
-qor_string_match_ignoring_case(${CMAKE_C_FLAGS} "avx2" QOR_FREETYPE_USE_AVX2)
-qor_string_match_ignoring_case(${CMAKE_C_FLAGS} "sse2" QOR_FREETYPE_USE_SSE2)
-qor_string_match_ignoring_case(${CMAKE_C_FLAGS} "neon" QOR_FREETYPE_USE_NEON)
-
-if(QOR_FREETYPE_USE_AVX2) 
-    set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_AVX2=ON")
-endif()
-if(QOR_FREETYPE_USE_SSE2) 
-    set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_SSE2=ON")
-endif()
-if(QOR_FREETYPE_USE_NEON) 
-    set(QOR_FREETYPE_BUILD_OPTIONS "${QOR_FREETYPE_BUILD_OPTIONS} -DFT_ENABLE_NEON=ON")
-endif()
+# Make toolchain file that prevents make from searching system libararies.
+set(TOOLCHAIN_FILE "${CMAKE_BINARY_DIR}/deps.toolchain.cmake")
+file(
+    WRITE ${TOOLCHAIN_FILE}
+    "
+# This file is generated by the superbuild. It enforces a sandboxed build.
+cmake_minimum_required(VERSION 3.16)\n
+set(CMAKE_C_COMPILER \"${CMAKE_C_COMPILER}\")\n
+set(CMAKE_CXX_COMPILER \"${CMAKE_CXX_COMPILER}\")\n
+set(CMAKE_BUILD_TYPE \"${CMAKE_BUILD_TYPE}\" CACHE STRING \"\")\n
+set(CMAKE_INSTALL_PREFIX \"${STAGING_DIR}\" CACHE PATH \"\")\n
+set(BUILD_SHARED_LIBS OFF CACHE BOOL \"\")\n
+set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL \"\")\n
+set(CMAKE_FIND_ROOT_PATH \"${STAGING_DIR}\" CACHE PATH \"\" FORCE)\n
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)\n
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)\n
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)\n
+")
+message(STATUS "Generated dependency toolchain file at: ${TOOLCHAIN_FILE}")
+set(EP_DEPS_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE})
 
 ExternalProject_Add(
-    QOR_Freetype
-    PREFIX ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/freetype
-    GIT_REPOSITORY ${QOR_FREETYPE_GIT_REPO}
-    GIT_TAG ${QOR_FREETYPE_GIT_TAG}
-    CMAKE_ARGS  "-DCMAKE_INSTALL_PREFIX=${QOR_DEPENDIENICES_INSTALL_PATH}/freetype
-                -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}"
-                ${QOR_FREETYPE_BUILD_OPTIONS}"
-    INSTALL_DIR ${QOR_DEPENDIENICES_INSTALL_PATH}/freetype
-    BUILD_ALWAYS OFF
-    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/freetype
-    LOG_DIR ${CMAKE_BINARY_DIR}/log/freetype
+    zlib_ep
+    GIT_REPOSITORY https://github.com/madler/zlib.git
+    GIT_TAG v1.3.1
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DZLIB_BUILD_EXAMPLES=OFF
 )
 
+ExternalProject_Add(
+    png_ep
+    GIT_REPOSITORY https://github.com/glennrp/libpng.git
+    GIT_TAG v1.6.49
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DPNG_TESTS=OFF -DPNG_TOOLS=OFF
+               -DPNG_SHARED=OFF -DPNG_STATIC=ON
+    DEPENDS zlib_ep
+)
 
-link_directories(${QOR_DEPENDIENICES_INSTALL_PATH}/freetype/lib)
-include_directories(${QOR_DEPENDIENICES_INSTALL_PATH}/freetype/include)
-target_link_libraries(QORender PRIVATE freetype)
+ExternalProject_Add(
+    brotli_ep
+    GIT_REPOSITORY https://github.com/google/brotli.git
+    GIT_TAG v1.1.0
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DBUILD_SHARED_LIBS=OFF
+               -DBROTLI_DISABLE_TESTS=ON
+)
 
-# --------------------------
+ExternalProject_Add(
+    freetype_ep
+    GIT_REPOSITORY https://gitlab.freedesktop.org/freetype/freetype.git
+    GIT_TAG VER-2-13-3
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS}
+               -DWITH_ZLIB=ON
+               -DWITH_PNG=ON
+               -DWITH_BZIP2=OFF
+               -DWITH_BROTLI=ON
+               -DWITH_HARFBUZZ=OFF
+               -DBUILD_SHARED_LIBS=OFF
+    GIT_SUBMODULES ""
+    DEPENDS zlib_ep png_ep brotli_ep
+)
 
-# -------- FFMpeg --------
+ExternalProject_Add(
+    harfbuzz_ep
+    GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
+    GIT_TAG 11.2.1
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DHB_HAVE_FREETYPE=ON -DHB_HAVE_GRAPHITE2=OFF
+               -DBUILD_SHARED_LIBS=OFF -DHB_BUILD_UTILS=OFF
+    DEPENDS freetype_ep
+)
 
-if(QOR_TARGET_ARCH MATCHES "x86")
-    find_program(YASM_PROGRAM yasm)
-    find_program(NASM_PROGRAM nasm)
-    if((NOT YASM_PROGRAM OR NOT NASM_PROGRAM) AND NOT QOR_FFMPEG_DISABLE_ASM)
-        message(FATAL_ERROR "yasm or nasm not found, required for ffmpeg")
-        message(NOTICE "If you desire to continue without compling ffmpeg with asm, 
-                set QOR_FFMPEG_DISABLE_ASM to ON. But it will dramatically 
-                decrease performance")
-    endif()
-elseif(QOR_TARGET_ARCH MATCHES "arm")
-    find_program(GAS_PROGRAM gas)
-    if((NOT GAS_PROGRAM) AND NOT QOR_FFMPEG_DISABLE_ASM)
-        message(FATAL_ERROR "gas not found, required for ffmpeg")
-        message(NOTICE "If you desire to continue without compling ffmpeg with asm, 
-                set QOR_FFMPEG_DISABLE_ASM to ON. But it will dramatically 
-                decrease performance")
-    endif()
-endif()
+ExternalProject_Add(
+    xxhash_ep
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG v0.8.3
+    GIT_SHALLOW 1
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ${CMAKE_MAKE_PROGRAM} libxxhash.a
+                  "CFLAGS=${CMAKE_C_FLAGS} -fPIC"
+    INSTALL_COMMAND
+        ${CMAKE_COMMAND} -E make_directory ${STAGING_DIR}/lib && ${CMAKE_COMMAND} -E
+        make_directory ${STAGING_DIR}/include && ${CMAKE_COMMAND} -E copy
+        <SOURCE_DIR>/libxxhash.a ${STAGING_DIR}/lib/libxxhash.a && ${CMAKE_COMMAND}
+        -E copy <SOURCE_DIR>/xxhash.h ${STAGING_DIR}/include/xxhash.h &&
+        ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/xxh3.h ${STAGING_DIR}/include/xxh3.h
+    BUILD_IN_SOURCE 1
+)
 
-if(QOR_TARGET_ARCH MATCHES "x86" AND DEFINED QOR_CUSTOMIZE_FFMPEG_SIMD)
-    if(QOR_SIMD_FLAGS NOT MATCHES "avx512icl")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-avx512icl")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "avx512")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-avx512")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "avx2")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-avx2")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "avx")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-avx")
-    endif() 
-    if(QOR_SIMD_FLAGS NOT MATCHES "sse4.2")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-sse42")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "sse4.1")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-sse41")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "sse3")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-sse3")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "ssse3")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-ssse3")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "sse2")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-sse2")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "sse")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-sse")
-    endif()
-    if(QOR_SIMD_FLAGS NOT MATCHES "mmx")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-mmx")
-    endif()
-elseif(QOR_TARGET_ARCH MATCHES "arm")
-    if(QOR_SIMD_FLAGS NOT MATCHES "neon")
-        set(QOR_FFMPEG_DISABLE_SIMDS "${QOR_FFMPEG_DISABLE_SIMDS} --disable-neon")
-    endif()
-# Do nothing when specified "native"
-endif()
+ExternalProject_Add(
+    xz_ep
+    GIT_REPOSITORY https://github.com/tukaani-project/xz.git
+    GIT_TAG v5.6.2
+    GIT_SHALLOW 1
+    CMAKE_ARGS  ${EP_DEPS_CMAKE_ARGS}
+                -DBUILD_TESTING=OFF
+                -DBUILD_SHARED_LIBS=OFF
+                -DBUILD_XZ=OFF
+                -DBUILD_XZDEC=OFF
+                -DBUILD_LZMADEC=OFF
+                -DBUILD_LZMAINFO=OFF
+                -DBUILD_SCRIPTS=OFF
+)
 
-if(NOT DEFINED QOR_USE_OPENH264)
-    set(QOR_SOFTWARE_H264_ENCODER "libx264")
-else()
-    set(QOR_SOFTWARE_H264_ENCODER "libopenh264")
-endif()
+ExternalProject_Add(
+    zstd_ep
+    GIT_REPOSITORY https://github.com/facebook/zstd.git
+    GIT_TAG v1.5.7
+    GIT_SHALLOW 1
+    SOURCE_SUBDIR build/cmake
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DZSTD_BUILD_PROGRAMS=OFF
+                -DZSTD_BUILD_TESTS=OFF -DZSTD_BUILD_SHARED=OFF
+                -DZSTD_BUILD_STATIC=ON
+)
 
-if(NOT DEFINED QOR_NO_HARDWARE_H264)
-    set(QOR_HARDWARE_H264_ENCODER_ARG " \
-        --enable-encoder=h264_qsv --enable-encoder=h264_amf \
-        --enable-encoder=h264_nvenc --enable-encoder=h254_vulkan "
+ExternalProject_Add(
+    libarchive_ep
+    GIT_REPOSITORY https://github.com/libarchive/libarchive.git
+    GIT_TAG v3.7.4
+    GIT_SHALLOW 1
+    CMAKE_ARGS  ${EP_DEPS_CMAKE_ARGS}
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                -DBUILD_SHARED_LIBS=OFF
+                -DENABLE_TEST=OFF
+                -DENABLE_BSDCPIO=OFF
+                -DENABLE_BSDTAR=OFF
+                -DENABLE_CAT=OFF
+                -DENABLE_TAR=OFF
+                -DENABLE_XATTR=OFF
+                -DENABLE_ACL=OFF
+                -DENABLE_ICONV=OFF
+                -DENABLE_7ZIP=ON
+                -DENABLE_RAR=ON
+                -DENABLE_RAR5=ON
+                -DENABLE_ZIP=ON
+                -DENABLE_ZLIB=ON
+                -DENABLE_XZ=ON
+                -DENABLE_ZSTD=ON
+    DEPENDS zlib_ep xz_ep zstd_ep
+)
+
+set(REAL_BASH_EXECUTABLE
+      "C:/tools/msys64/usr/bin/bash.exe"
+      CACHE FILEPATH "Path to the MSYS2 bash executable")
+if(NOT EXISTS ${REAL_BASH_EXECUTABLE})
+    message(
+      FATAL_ERROR
+        "REAL_BASH_EXECUTABLE not found at ${REAL_BASH_EXECUTABLE}. Please set the correct path."
     )
-else()
-    set(QOR_HARDWARE_H264_ENCODER_ARG "") 
-endif()
-
-set(QOR_FFMPEG_CONFIGURE_COMMAND "${QOR_DEPENDIENICES_DOWNLOAD_PATH}/ffmpeg/configure \
-    --prefix=${QOR_DEPENDIENICES_INSTALL_PATH}/ffmpeg \
-    --arch ${QOR_TARGET_ARCH} \
-    --disable-all --disable-everything \
-    --disable-doc --disable-debug --disable-protocols \
-    --disable-muxers \
-    --disable-demuxers \
-    --enable-filter=colorspace \
-    --enable-filter=hwupload \
-    --enable-filter=scale \
-    --enable-filter=format \
-    --enable-pixel-format=yuv444p \
-    --enable-pixel-format=yuv420p \
-    --enable-pixel-format=rgb24 \
-    --enable-pixel-format=rgba \
-    --enable-pixel-format=gray8 \
-    --enable-encoder=${QOR_SOFTWARE_H264_ENCODER} \
-    ${QOR_HARDWARE_H264_ENCODER_ARG} \
-    --enable-muxer=mp4 \
-    --enable-muxer=mov \
-    --enable-muxer=matroska \
-    --enable-protocol=file "
-)
-
-if(QOR_FFMPEG_NO_ASM)
-    set(QOR_FFMPEG_CONFIGURE_COMMAND "${QOR_FFMPEG_CONFIGURE_COMMAND} --disable-asm")
 endif()
 
 ExternalProject_Add(
-    QOR_FFMpeg
-    PREFIX ${QOR_DEPENDIENICES_DOWNLOAD_PATH}/ffmpeg
-    GIT_REPOSITORY ${QOR_FFMPEG_GIT_REPO}
-    GIT_TAG ${QOR_FFMPEG_GIT_TAG}
-    CONFIGURE_COMMAND ${QOR_FFMPEG_CONFIGURE_COMMAND}
-    BUILD_COMMAND make -j${CMAKE_PARALLEL_LEVEL}
+    icu_ep
+    URL "https://github.com/unicode-org/icu/releases/download/release-77-1/icu4c-77_1-src.tgz"
+    URL_HASH
+      SHA256=588e431f77327c39031ffbb8843c0e3bc122c211374485fa87dc5f3faff24061
+    PATCH_COMMAND ${REAL_BASH_EXECUTABLE} -c
+                  "cd source/config && cp mh-mingw64 mh-unknown"
+    SOURCE_SUBDIR source
+    BUILD_IN_SOURCE 1
+    CONFIGURE_COMMAND
+      ${REAL_BASH_EXECUTABLE} -c
+      "CC='${CMAKE_C_COMPILER}' CXX='${CMAKE_CXX_COMPILER}' CFLAGS='${CMAKE_C_FLAGS} -DU_CHARSET_IS_UTF8=1' CXXFLAGS='${CMAKE_CXX_FLAGS} -DU_CHARSET_IS_UTF8=1' ./configure --prefix=${STAGING_DIR} --enable-static --disable-shared --disable-samples --disable-tests --disable-tools --disable-extras --with-data-packaging=library --disable-renaming"
+    BUILD_COMMAND make
     INSTALL_COMMAND make install
-    OUTPUT_VARIABLE FFMPEG_CONFIGURE_OUTPUT
-    BUILD_ALWAYS OFF
-    STAMP_DIR ${CMAKE_BINARY_DIR}/stamp/ffmpeg
-    LOG_DIR ${CMAKE_BINARY_DIR}/log/ffmpeg
 )
-message(STATUS "${FFMPEG_CONFIGURE_OUTPUT}")
 
-function(find_win_icu)
-endfunction()
+ExternalProject_Add(
+    cglm_ep
+    GIT_REPOSITORY https://github.com/recp/cglm.git
+    GIT_TAG v0.9.6
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DCGLM_SHARED=OFF -DCGLM_STATIC=ON
+               -DCGLM_USE_TEST=OFF
+)
 
-if(USE_SYSTEM_ICU)
-    if(NOT WIN32)
-        message(FATAL_ERROR "USE_SYSTEM_ICU is not supported on non-Windows platforms")
-    endif()
+ExternalProject_Add(
+    yyjson_ep
+    GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+    GIT_TAG 0.11.1
+    GIT_SHALLOW 1
+    CMAKE_ARGS ${EP_DEPS_CMAKE_ARGS} -DYYJSON_BUILD_TESTS=OFF
+)
+
+ExternalProject_Add(
+    sqlite_download
+    URL https://www.sqlite.org/2025/sqlite-amalgamation-3500100.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP true
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+)
+
+ExternalProject_Add(
+    vma_download
+    GIT_REPOSITORY
+        https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG v3.3.0
+    GIT_SHALLOW 1
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+)
+
+ExternalProject_Add(
+    libQuickOK_Engine
+    DEPENDS harfbuzz_ep libarchive_ep yyjson_ep cglm_ep icu_cp
+
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/core
+    BINARY_DIR ${CMAKE_BINARY_DIR}/libQuickOK_Engine-build
     
-endif()
-
-add_dependencies(QORender QOR_FFMpeg)
-target_include_directories(QORender PRIVATE ${QOR_DEPENDIENICES_INSTALL_PATH}/ffmpeg/include)
-target_link_directories(QORender PRIVATE ${QOR_DEPENDIENICES_INSTALL_PATH}/ffmpeg/lib)
-target_link_libraries(QORender PRIVATE avcodec avformat avfilter avutil swscale)
-
-# ------------------------------------------------------
-
+    CMAKE_ARGS 
+        -DCMAKE_INSTALL_PREFIX=${EP_INSTALL_PREFIX}
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCMAKE_PREFIX_PATH=${EP_INSTALL_PREFIX}
+)
