@@ -3,7 +3,7 @@
 
 #define QO_ENABLE_EXPERIMENTAL_CXX
 
-#include "../../QuickOK-Zero/include/qozero.h"
+#include "../../../QuickOK-Zero/include/qozero.h"
 #if defined(__cplusplus)
 extern "C" {
 #endif // defined(__cplusplus)
