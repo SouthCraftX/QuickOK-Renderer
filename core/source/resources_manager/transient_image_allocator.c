@@ -1,12 +1,8 @@
 #include "transient_image_allocator.h"
-#include "rendering_env.h"
-#include "string_hash_index_map.h"
-#include "transient_image_allocator.h"
-#include "vkimage_info_hash_wvkimage_list_map.h"
-#include "vulkan_make_debug_message.h"
-#include "wrapped_vulkan_image.h"
-#include "wrapped_vulkan_image_list.h"
-#include <vulkan/vulkan_core.h>
+#include "../container/string_hash_index_map.h"
+#include "../container/vkimage_info_hash_wvkimage_list_map.h"
+#include "../diagnostics/vulkan_make_debug_message.h"
+#include "../container/wvkimage_list.h"
 
 _WVkImage *
 acquire_from_list(

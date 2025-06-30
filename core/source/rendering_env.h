@@ -1,7 +1,7 @@
 #pragma once
 #include "mimalloc_vulkan_callback.h"
 #include "../include/renderer.h"
-#include "vk_fmtprops_map.h"
+#include "container/vk_fmtprops_map.h"
 #include <mimalloc.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
@@ -109,6 +109,12 @@ struct __VkDeviceContext
 
     VkPipeline                pipeline;
     VkPipelineLayout          pipeline_layout;
+
+    struct 
+    {
+        VkMemoryRequirements image;
+        VkMemoryRequirements buffer;
+    } memory_requirements;
 
     _VkFormatPropertiesMap    format_properties_map;
 };

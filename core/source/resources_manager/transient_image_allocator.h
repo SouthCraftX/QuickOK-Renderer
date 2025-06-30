@@ -1,12 +1,11 @@
 #pragma once
 #define __QOR_TRANSIENT_IMAGE_ALLOCATOR_SRC__
-#include "rendering_env.h"
-#include "vkimage_info_hash_wvkimage_list_map.h"
+#include "../rendering_env.h"
+#include "../container/vkimage_info_hash_wvkimage_list_map.h"
 #include <vulkan/vulkan_core.h>
 
 #include "string_hash_index_map.h"
-#include "wrapped_vulkan_image.h"
-#include "vkimage_info_hash_wvkimage_list_map.h"
+#include "../wrapped_vulkan_objects/wvkimage.h"
 #include <xxhash.h>
 
 struct __TransientImageDescription

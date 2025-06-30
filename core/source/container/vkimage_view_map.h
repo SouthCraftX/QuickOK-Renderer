@@ -1,7 +1,7 @@
 #pragma once
 #define __QOR_VK_IMAGE_VIEW_MAP_SRC__
 
-#include "wrapped_vulkan_image.h"
+#include "../wrapped_vulkan_objects/wvkimage.h"
 #include "funnel_hash_table.h"
 
 struct __VkImageViewMap
