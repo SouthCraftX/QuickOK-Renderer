@@ -7,7 +7,7 @@ typedef XXH64_hash_t VkImageViewCreateInfo_hash_t;
 
 // We can't directly use memcmp() because padding in structure may cause false negative
 qo_bool_t
-vk_component_mapping_compare(
+VkComponentMapping_compare(
     VkComponentMapping const * lhs ,
     VkComponentMapping const * rhs
 ) {
@@ -39,7 +39,7 @@ vkimage_view_create_info_compare1(
 ) {
     return
         s1->sType == s2->sType &&
-        vk_component_mapping_compare(&s1->components ,
+        VkComponentMapping_compare(&s1->components ,
         &s2->components) &&
         vkimage_subresource_range_compare(&s1->subresourceRange ,
         &s2->subresourceRange)
@@ -93,7 +93,7 @@ void
 destroy_vkimage_view_info_key(
     fht_key_t  key
 ) {
-    free((qo_pointer_t)key);
+    mi_free((qo_pointer_t)key);
 }
 
 qo_stat_t
@@ -101,8 +101,8 @@ vkimage_view_map_init(
     _VkImageViewMap *   self
 ) {
     return fht_init(&self->hash_table ,
-        sizeof(VkImageViewCreateInfo) ,
-        sizeof(VkImageView) ,
+        1 ,
+        .1 ,
         &(_FunnelHashTableAuxiliary){
             .hash_func = hash_vkimage_view_creation_info2,
             .equals_func = vkimage_view_create_info_compare2,

@@ -4,7 +4,7 @@
 #include "../rendering_env.h"
 #include <limits.h>
 
-#define FUNNEL_HASH_TABLE_VALUE_EMPTY INT64_MIN
+#define FHT_EMPTY_VALUE  INTMAX_MIN
 
 typedef qo_intmax_t fht_key_t;
 typedef qo_intmax_t fht_value_t;
@@ -81,6 +81,13 @@ fht_init(
     qo_size_t                   capacity ,
     qo_fp32_t                   delta ,
     _FunnelHashTableAuxiliary * p_auxiliary
+);
+
+_FunnelHashTableEntry *
+fht_find_slot(
+    _FunnelHashTable *  self,
+    fht_key_t           key ,
+    qo_bool_t           find_empty_for_insert
 );
 
 void

@@ -6,3 +6,4 @@ struct __VertexInputLayout
     VkVertexInputAttributeDescription * attributes;
     VkVertexInputBindingDescription *   bindings;
 };
+typedef struct __VertexInputLayout _VertexInputLayout ;

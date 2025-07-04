@@ -1,5 +1,4 @@
 #pragma once
-#include "wvkimage_memory.h"
 #include <vulkan/vulkan_core.h>
 #define __QOR_WRAPED_VULKAN_IMAGE_SRC__
 #include "../rendering_env.h"
@@ -12,6 +11,7 @@ struct __WVkImage
     // Since _WVKimage is often transfered between objects (like pools)
     // We need to keep a reference count to manage it's lifetime.
     qo_ref_count_t     reference_count;
+    VkImageCreateInfo  image_info;
     VkImage            image;
     VkExtent3D         extent;     // For 2D image, `depth` is always 1
     VkFormat           format;
@@ -19,48 +19,70 @@ struct __WVkImage
     qo_uint32_t        mip_levels;
     qo_uint32_t        array_layers;
     VkImageLayout      current_layout;
+    qo_uint64_t        id; 
     // VkImageCreateInfo  image_info;
     // XXH64_hash_t       image_info_hash;
     _VkDeviceContext * device_context;
 };
 typedef struct __WVkImage _WVkImage; 
 
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
+qo_uint64_t
+wvkimage_get_id(
+    _WVkImage * self
+) {
+    return self->id;
+}
+
+QO_NODISCARD QO_NONNULL(1)
 VkExtent3D
 wvkimage_get_extent(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 VkFormat
 wvkimage_get_format(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 qo_uint32_t
 wvkimage_get_mip_levels(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 qo_uint32_t
 wvkimage_get_array_layers(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 VkImageLayout
 wvkimage_get_current_layout(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 _VkMemoryBlock *
 wvkimage_get_memory_block(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
 VkImage
 wvkimage_get_handle(
     _WVkImage * self
 );
 
+QO_NODISCARD QO_NONNULL(1)
+VkImageCreateInfo const *
+wvkimage_get_create_info(
+    _WVkImage * self
+);
 
+QO_NODISCARD QO_NONNULL(1 , 2 , 7 , 8)
 VkResult
 wvkimage_new(
     _WVkImage **                    p_self ,
@@ -73,6 +95,7 @@ wvkimage_new(
     VmaAllocationCreateInfo const * alloc_info
 );
 
+QO_NONNULL(1 , 2)
 VkResult
 wvkimage_bind_memory(
     _WVkImage *         self ,
@@ -80,6 +103,7 @@ wvkimage_bind_memory(
     VkDeviceSize        size
 );
 
+QO_NONNULL(1 , 2 , 3)
 VkResult
 wvkimage_clear(
     _WVkImage *               self ,
@@ -94,6 +118,7 @@ wvkimage_copy(
     VkCommandBuffer  command_buffer
 );
 
+QO_NODISCARD QO_NONNULL(1)
 VkResult
 wvkimage_set_current_layout(
     _WVkImage *    self ,
@@ -101,6 +126,7 @@ wvkimage_set_current_layout(
 );
 
 // This shouldn't be called when the image needs transition of queue ownership
+QO_NONNULL(1 , 2)
 void
 wvkimage_simple_record_transition(
     _WVkImage *      self ,
@@ -108,17 +134,12 @@ wvkimage_simple_record_transition(
     VkImageLayout    new_layout
 );
 
+QO_NODISCARD QO_NONNULL(1 , 2 , 3)
 VkResult
 wvkimage_record_transition(
     _WVkImage *                  self ,
     VkCommandBuffer              command_buffer ,
     VkImageMemoryBarrier const * user_barrier
-);
-
-VkDescriptorImageInfo
-wvkimage_get_descriptor_info(
-    _WVkImage * self ,
-    VkSampler   sampler
 );
 
 void

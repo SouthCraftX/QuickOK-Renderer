@@ -18,7 +18,7 @@ typedef enum
 {
     QO_FONT_ENGINE_FREETYPE = 0 ,
     QO_FONT_ENGINE_STB_TRUETYPE ,
-    QO_FONT_ENGINE_GDI , // Windows only
+    QO_FONT_ENGINE_DIRECTWRITE , // Windows only
 } QO_FontEngineBackend; //__qo_font_engine_backend;
 
 typedef enum

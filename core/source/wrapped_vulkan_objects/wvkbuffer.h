@@ -4,6 +4,7 @@
 
 #include "../vkmemory_block.h"
 
+// The uploading should be done with _StagingManager
 struct __WVkBuffer
 {
     qo_ref_count_t      reference_count;
@@ -13,17 +14,6 @@ struct __WVkBuffer
     _VkMemoryBlock *    memory_block;
 };
 typedef struct __WVkBuffer _WVkBuffer;
-
-QO_NODISCARD
-VkResult
-wvkbuffer_map(
-    _WVkBuffer * self
-);
-
-void
-wvkbuffer_unmap(
-    _WVkBuffer * self
-);
 
 VkDeviceSize
 wvkbuffer_get_size(
@@ -45,7 +35,6 @@ wvkbuffer_get_data(
 ) {
     return self->mapped_data;
 }
-
 
 QO_GLOBAL_UNIQUE
 void
@@ -82,10 +71,30 @@ wvkbuffer_upload_data(
 QO_NODISCARD
 VkResult
 wvkbuffer_new(
-    _WVkBuffer **              p_self ,
-    VkBufferCreateInfo const * buffer_info ,
-    VmaMemoryUsage             memory_usage ,
-    VmaAllocationCreateInfo    allocation_flags
+    _WVkBuffer **                   p_self ,
+    VkBufferCreateInfo const *      buffer_info ,
+    VmaAllocationCreateInfo const * alloc_info ,
+    _VkDeviceContext *              device_context
+);
+
+QO_NODISCARD
+VkResult
+wvkbuffer_new_gpu_only(
+    _WVkBuffer **       p_self ,
+    _VkDeviceContext *  device_context ,
+    VkDeviceSize        size ,
+    VkBufferUsageFlags  usage ,
+    qo_uint32_t *       queue_family_indices , // nullable
+    qo_uint32_t         queue_family_indices_count
+);
+
+QO_NODISCARD
+VkResult
+wvkbuffer_new_cpu_visible(
+    _WVkBuffer **       p_self ,
+    _VkDeviceContext *  device_context ,
+    VkDeviceSize        size ,
+    VkBufferUsageFlags  usage
 );
 
 void

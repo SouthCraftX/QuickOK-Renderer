@@ -7,7 +7,7 @@
 #include <math.h>
 #include <time.h>
 
-#define FHT_EMPTY_VALUE  INTMAX_MIN
+
 
 static void
 cleanup_levels(

@@ -50,7 +50,7 @@ __qo_video_encoder_generic_hw_new(
     
 J_FAIL:
     if (p_encoder) 
-        free(p_encoder);
+        mi_free(p_encoder);
     if (frame_in)
         av_frame_free(&frame_in);
     return stat;

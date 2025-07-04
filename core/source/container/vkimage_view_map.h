@@ -42,7 +42,7 @@ vkimage_view_map_search(
 );
 
 XXH64_hash_t
-hash_vkimage_view_creation_info(
+hash_vkimage_view_create_info(
     VkImageViewCreateInfo *         view_info
 );
 

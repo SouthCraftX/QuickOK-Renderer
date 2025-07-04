@@ -1,9 +1,6 @@
 #include "wvkimage.h"
-#include "../mimalloc_vulkan_callback.h"
 #include "../access_info_inferor.h"
 #include "../rendering_env.h"
-#include "../container/vkimage_view_map.h"
-#include "wvkbuffer.h"
 #include "wvkimage_memory.h"
 #include <mimalloc.h>
 #include <vulkan/vulkan_core.h>
@@ -29,7 +26,7 @@ wvkimage_init_brandnew(
 
     _VkMemoryBlock * memory_block;
     res = vkmemory_block_new(&memory_block , device_context ,
-        &device_context->memory_requirements.image , alloc_info);
+        &device_context->memory_requirements.image , *alloc_info);
     if (res != VK_SUCCESS)
     {
         return res;
@@ -49,14 +46,9 @@ wvkimage_bind_memory(
     _VkMemoryBlock * memory_block ,
     VkDeviceSize     offset
 ) {
-    VmaAllocationInfo  alloc_info;
-    vmaGetAllocationInfo(
-        get_vma_allocator() , vkmemory_block_get_allocation(memory_block) ,
-        &alloc_info
-    );
-    vkmemory_block_ref(memory_block);
     return vkBindImageMemory(self->device_context->logical_device ,
-        self->image , alloc_info.deviceMemory , alloc_info.offset + offset);
+        self->image , vkmemory_block_get_device_memory(memory_block) ,
+        vkmemory_block_get_offset(memory_block) + offset);
 }
 
 VkResult
