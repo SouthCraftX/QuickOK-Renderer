@@ -22,14 +22,6 @@ struct __Renderable
 };
 typedef struct __Renderable _Renderable;
 
-struct __Mesh
-{
-    mesh_id_t id; // Equal to Renderable's mesh_id
-    qo_uint32_t index_count;
-    qo_uint32_t vertex_count;
-    qo_cstring_t path; // its lifetime is aligned with _Mesh's lifetime
-};
-typedef struct __Mesh _Mesh;
 
 // The minimal renderable object
 struct __IRenderable;

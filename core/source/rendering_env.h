@@ -9,6 +9,10 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
+typedef qo_uint64_t object_id_t;
+typedef qo_pointer_t object_ptr_t;
+typedef qo_uint64_t   state_id_t;
+
 struct __VkQueueFamilyIndexes
 {
     // Some GPUs provide mutilple

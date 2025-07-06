@@ -5,8 +5,6 @@
 #include "wrapped_vulkan_image.h"
 #include <xxh3.h>
 
-typedef XXH64_hash_t string_hash_t;
-
 typedef qo_size_t wvkimage_index_t;
 struct __ActiveImageIndexEntry
 {

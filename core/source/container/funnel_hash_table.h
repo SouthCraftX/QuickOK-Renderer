@@ -3,11 +3,13 @@
 
 #include "../rendering_env.h"
 #include <limits.h>
+#include <xxh3.h>
 
 #define FHT_EMPTY_VALUE  INTMAX_MIN
 
 typedef qo_intmax_t fht_key_t;
 typedef qo_intmax_t fht_value_t;
+typedef XXH64_hash_t string_hash_t;
 
 typedef 
     qo_size_t 

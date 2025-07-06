@@ -3,9 +3,6 @@
 
 #include "funnel_hash_table.h"
 
-typedef qo_flag64_t          object_id_t;
-typedef struct _QOR_Object * object_ptr_t;
-
 struct __IDObjectMap
 {
     _FunnelHashTable  hash_table;

@@ -3,7 +3,7 @@
 
 struct __VertexInputLayout
 {
-    VkVertexInputAttributeDescription * attributes;
-    VkVertexInputBindingDescription *   bindings;
+    VkVertexInputBindingDescription *   bindings; //< Where are data from
+    VkVertexInputAttributeDescription * attributes; //< What are data
 };
 typedef struct __VertexInputLayout _VertexInputLayout ;
