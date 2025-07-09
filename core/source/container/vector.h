@@ -22,7 +22,7 @@ struct __VectorIterator
 };
 typedef struct __VectorIterator _VectorIterator;
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_bool_t
 vector_init(
     _Vector *  self ,
@@ -38,7 +38,7 @@ vector_init(
         return qo_false;
     }
     self->data = data;
-    return true;
+    return qo_true;
 }
 
 void
@@ -49,7 +49,7 @@ vector_destroy(
     memset(self , 0 , sizeof(_Vector));
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_bool_t
 vector_is_empty(
     _Vector const * self
@@ -58,7 +58,7 @@ vector_is_empty(
     return self->size == 0;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_bool_t
 vector_reserve(
     _Vector * self ,
@@ -79,7 +79,7 @@ vector_reserve(
     return qo_true;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_pointer_t
 vector_at(
     _Vector const * self ,
@@ -89,7 +89,7 @@ vector_at(
     return (qo_pointer_t)((qo_uint8_t *)self->data + index * self->element_size);
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_pointer_t
 vector_back(
     _Vector const * self
@@ -98,7 +98,7 @@ vector_back(
     return vector_is_empty(self) ? NULL : vector_at(self , 0);
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1 , 2)
 qo_bool_t
 vector_push_back(
     _Vector *       self ,
@@ -127,7 +127,7 @@ vector_clear(
     self->size = 0;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_size_t
 vector_get_count(
     _Vector const * self
@@ -136,7 +136,7 @@ vector_get_count(
     return self->size;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_pointer_t
 vector_get_data(
     _Vector const * self
@@ -145,7 +145,7 @@ vector_get_data(
     return self->data;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_size_t
 vector_get_capacity(
     _Vector const * self
@@ -154,7 +154,7 @@ vector_get_capacity(
     return self->capacity;
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 _VectorIterator
 vector_iterate_begin(
     _Vector * self
@@ -174,6 +174,7 @@ vector_iterate_end(
     };
 }
 
+QO_NONNULL(1)
 void
 vector_iterator_next(
     _VectorIterator *   self
@@ -184,6 +185,7 @@ vector_iterator_next(
     }
 }
 
+QO_NONNULL(1)
 void
 vector_iterator_prev(
     _VectorIterator *   self
@@ -194,7 +196,7 @@ vector_iterator_prev(
     }
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1)
 qo_pointer_t
 vector_iterator_get(
     _VectorIterator const * self
@@ -203,6 +205,7 @@ vector_iterator_get(
            vector_at(self->vector , self->index) : NULL;
 }
 
+QO_NONNULL(1)
 void
 vector_iterator_set(
     _VectorIterator *   self ,
@@ -214,7 +217,7 @@ vector_iterator_set(
     }
 }
 
-QO_NODISCARD
+QO_NODISCARD QO_NONNULL(1 , 2)
 qo_bool_t
 vector_iterator_equals(
     _VectorIterator const * a ,

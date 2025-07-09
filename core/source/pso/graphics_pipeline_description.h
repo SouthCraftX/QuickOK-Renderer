@@ -1,9 +1,16 @@
 #pragma once
 #define __QOR_GRAPHICS_PIPELINE_DESCRIPTION_SRC__
 
-#include "../container/extension_states_map.h"
+#include "../container/vector.h"
 
-VkGraphicsPipelineCreateInfo info;
+
+
+struct __PNextLink
+{
+    object_id_t extension_name_id; // Hash
+    object_id_t state_id;
+};
+typedef struct __PNextLink _PNextLink;  
 
 struct __GraphicsPipelineDescription
 {
@@ -19,6 +26,6 @@ struct __GraphicsPipelineDescription
     object_id_t multisample_state_id;
     object_id_t dynamic_state_id;
 
-    
+    _Vector     extension_states; // We need ordered
 };
 typedef struct __GraphicsPipelineDescription _GraphicsPipelineDescription;

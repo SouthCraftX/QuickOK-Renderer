@@ -3,30 +3,64 @@
 #define __QOR_WRAPED_VULKAN_IMAGE_SRC__
 #include "../rendering_env.h"
 #include "../vkmemory_block.h"
+#include "../container/optional.h"
 #include "../container/funnel_hash_table.h"
 #include "../container/vkimage_view_map.h"
 #include <xxh3.h>
+
+struct __WVkImageDescription
+{
+    VkExtent3D             extent; //< for 2D image, `depth` is always 1
+    VkFormat               format;
+    VkImageUsageFlags      image_usage;
+    VkImageType            type;
+    VmaMemoryUsage         memory_usage;
+    VmaAllocationCreateFlags allocation_flags;
+    VkSampleCountFlagBits  samples;
+
+    //< 0 means maximum possible mip levels, 1 means no mipmap generation
+    qo_uint32_t    mip_levels;
+    qo_uint32_t    array_layers;
+
+    qo_ccstring_t  debug_name;
+
+    _OPTIONAL(VkImageTiling , tiling);
+    _OPTIONAL(VkSharingMode, sharing_mode);
+    _OPTIONAL(VkImageLayout , initial_layout);
+    _OPTIONAL(struct {
+        qo_uint32_t       count;
+        qo_uint32_t *     data;
+    } , queue_family_indices);
+
+};
+typedef struct __WVkImageDescription _WVkImageDescription;
+
 struct __WVkImage
 {
     // Since _WVKimage is often transfered between objects (like pools)
     // We need to keep a reference count to manage it's lifetime.
-    qo_ref_count_t     reference_count;
-    VkImageCreateInfo  image_info;
-    VkImage            image;
-    VkExtent3D         extent;     // For 2D image, `depth` is always 1
-    VkFormat           format;
-    _VkMemoryBlock *   memory_block; // Not directly use VmaAllocation so we can easily creat alised
-    qo_uint32_t        mip_levels;
-    qo_uint32_t        array_layers;
-    VkImageLayout      current_layout;
-    qo_uint64_t        id; 
-    // VkImageCreateInfo  image_info;
-    // XXH64_hash_t       image_info_hash;
+    qo_ref_count_t        reference_count;
+    _WVkImageDescription  image_desc;
+    VkImage               image;
+
+    // Not directly use VmaAllocation so we can easily creat alised
+    // If it's NULL, this image is swapchain image
+    _VkMemoryBlock *   memory_block;
+
     _VkDeviceContext * device_context;
+
+    qo_uint32_t        max_mip_levels;
+
+    qo_uint64_t        id;
+
+    VkImageLayout      global_layout; // VK_IMAGE_LAYOUT_MAX_ENUM wiil be set if not shared
+    qo_uint32_t        used_subresource_layout_count;
+    VkImageLayout      subresource_layouts[]; //< max_mip_levels
 };
-typedef struct __WVkImage _WVkImage; 
+typedef struct __WVkImage _WVkImage;
 
 QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
+
 qo_uint64_t
 wvkimage_get_id(
     _WVkImage * self
@@ -34,73 +68,101 @@ wvkimage_get_id(
     return self->id;
 }
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 VkExtent3D
 wvkimage_get_extent(
     _WVkImage * self
-);
+) {
+    return self->image_desc.extent;
+}
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 VkFormat
 wvkimage_get_format(
     _WVkImage * self
-);
+) {
+    return self->image_desc.format;
+}
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 qo_uint32_t
 wvkimage_get_mip_levels(
     _WVkImage * self
-);
+) {
+    return self->image_desc.mip_levels;
+}
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 qo_uint32_t
 wvkimage_get_array_layers(
     _WVkImage * self
-);
+) {
+    return self->image_desc.array_layers;
+}
+
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
+VkImageLayout
+wvkimage_get_global_layout(
+    _WVkImage * self
+) {
+    return self->global_layout;
+}
 
 QO_NODISCARD QO_NONNULL(1)
 VkImageLayout
-wvkimage_get_current_layout(
-    _WVkImage * self
+wvkimage_get_subresource_layout(
+    _WVkImage *  self ,
+    qo_uint32_t  mip_level ,
+    qo_uint32_t  array_layer
 );
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 _VkMemoryBlock *
 wvkimage_get_memory_block(
     _WVkImage * self
-);
+) {
+    return self->memory_block;
+}
 
-QO_NODISCARD QO_NONNULL(1)
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
 VkImage
 wvkimage_get_handle(
     _WVkImage * self
-);
+) {
+    return self->image;
+}
 
-QO_NODISCARD QO_NONNULL(1)
-VkImageCreateInfo const *
-wvkimage_get_create_info(
+QO_GLOBAL_UNIQUE QO_FORCE_INLINE QO_NODISCARD QO_NONNULL(1)
+_WVkImageDescription const *
+wvkimage_get_image_info(
     _WVkImage * self
-);
+) {
+    return &self->image_desc;
+}
 
-QO_NODISCARD QO_NONNULL(1 , 2 , 7 , 8)
+/// @brief Create a new wvkimage.
+/// @param p_self Pointer to _WVkImage *
+/// @param image_desc 
+/// @param device_context 
+/// @param alloc_info Set it NULL if not wanting. When it isn't NULL, `
+///                   `allocation_flags` and `memory_usage` in `image_desc` will
+///                   be ignored.
+/// @return VkResult 
+QO_NODISCARD 
 VkResult
 wvkimage_new(
     _WVkImage **                    p_self ,
-    VkImageCreateInfo const * create_info ,
-    VkExtent3D                extent ,
-    VkFormat                  format ,
-    qo_uint32_t               mip_levels ,
-    qo_uint32_t               array_layers ,
-    _VkDeviceContext *       device_context ,
+    _WVkImageDescription *          image_desc ,
+    _VkDeviceContext *              device_context ,
     VmaAllocationCreateInfo const * alloc_info
 );
 
 QO_NONNULL(1 , 2)
 VkResult
 wvkimage_bind_memory(
-    _WVkImage *         self ,
-    _VkMemoryBlock *    memory_block ,
-    VkDeviceSize        size
+    _WVkImage *      self ,
+    _VkMemoryBlock * memory_block ,
+    VkDeviceSize     size
 );
 
 QO_NONNULL(1 , 2 , 3)
